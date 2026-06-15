@@ -1,4 +1,4 @@
-from datetime import UTC
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from sqlalchemy import func, select, update
@@ -205,6 +205,8 @@ class PlayerDAL:
         stmt_batches = select(func.count(Batch.batch_id)).where(
             Batch.player_id == player_id,
             Batch.quantity_barrels > 0,
+            Batch.is_completed.is_(False),
+            Batch.ready_at <= datetime.now(UTC),
         )
         batches_res = await self.session.execute(stmt_batches)
         ready_batches = batches_res.scalar_one_or_none() or 0
@@ -220,6 +222,30 @@ class PlayerDAL:
         return {
             "ready_batches": ready_batches,
             "tired_staff": tired_staff,
+        }
+
+    async def collect_ready_batches(self, player_id: int) -> dict[str, int]:
+        """
+        Переносит созревшие партии пива на склад.
+        """
+        stmt = select(Batch).where(
+            Batch.player_id == player_id,
+            Batch.quantity_barrels > 0,
+            Batch.is_completed.is_(False),
+            Batch.ready_at <= datetime.now(UTC),
+        )
+        res = await self.session.execute(stmt)
+        batches = list(res.scalars().all())
+
+        barrels = 0
+        for batch in batches:
+            batch.is_completed = True
+            barrels += int(batch.quantity_barrels)
+
+        await self.session.flush()
+        return {
+            "batches": len(batches),
+            "barrels": barrels,
         }
 
     async def get_resources(self, player_id: int) -> dict[str, Decimal]:

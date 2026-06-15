@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.bot.keyboards.inline import get_main_menu_keyboard
+from src.bot.states import TutorialStates
 from src.bot.utils.formatters import get_profile_text
 from src.database.dal import PlayerDAL, PlayerNotFoundError
 from src.database.models import Staff, Batch
@@ -59,7 +60,9 @@ async def show_inventory(callback: CallbackQuery, session: AsyncSession) -> None
 
         # Получаем бочки на складе
         stmt = select(Batch).where(
-            Batch.player_id == int(player.player_id), Batch.quantity_barrels > 0
+            Batch.player_id == int(player.player_id),
+            Batch.quantity_barrels > 0,
+            Batch.is_completed.is_(True),
         )
         res = await session.execute(stmt)
         batches = res.scalars().all()
@@ -111,6 +114,47 @@ async def show_inventory(callback: CallbackQuery, session: AsyncSession) -> None
         await callback.answer("Профиль не найден. Напишите /start", show_alert=True)
 
     await callback.answer()
+
+
+@menu_router.callback_query(F.data == "inventory:collect_ready")
+async def collect_ready_batches_callback(
+    callback: CallbackQuery, session: AsyncSession, state: FSMContext
+) -> None:
+    """
+    Собирает созревшие партии пива на склад.
+    """
+    if not callback.from_user or not callback.message or not isinstance(callback.message, Message):
+        await callback.answer()
+        return
+
+    tg_id = callback.from_user.id
+    player_dal = PlayerDAL(session)
+
+    try:
+        player = await player_dal.get_player(tg_id)
+        result = await player_dal.collect_ready_batches(int(player.player_id))
+        if result["batches"] == 0:
+            await callback.answer("Готовых партий для сбора нет.", show_alert=True)
+            return
+
+        if player.tutorial_step == 1:
+            await player_dal.update_tutorial_step(tg_id, 2)
+            await state.set_state(TutorialStates.first_sell)
+
+        builder = InlineKeyboardBuilder()
+        builder.row(InlineKeyboardButton(text="🎒 Открыть склад", callback_data="screen:inventory"))
+        builder.row(InlineKeyboardButton(text="🔙 Назад в меню", callback_data="screen:menu"))
+
+        await callback.message.edit_text(
+            f"🟢 <b>Пиво собрано!</b>\n\n"
+            f"На склад перенесено партий: <code>{result['batches']}</code>\n"
+            f"Всего бочек: <code>{result['barrels']}</code>",
+            parse_mode="HTML",
+            reply_markup=builder.as_markup(),
+        )
+        await callback.answer("Пиво собрано!")
+    except PlayerNotFoundError:
+        await callback.answer("Профиль не найден. Напишите /start", show_alert=True)
 
 
 @menu_router.callback_query(F.data == "inventory:buy_resources")

@@ -14,7 +14,7 @@ def get_main_menu_keyboard(alerts: dict | None = None) -> InlineKeyboardMarkup:
             builder.row(
                 InlineKeyboardButton(
                     text=f"🟢 Собрать пиво ({alerts['ready_batches']} шт)",
-                    callback_data="screen:inventory",
+                    callback_data="inventory:collect_ready",
                 )
             )
         if alerts.get("tired_staff", 0) > 0:

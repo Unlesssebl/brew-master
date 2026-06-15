@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from decimal import Decimal
 from aiogram import F, Router, html
 from aiogram.filters import Command
@@ -8,13 +9,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from aiogram.exceptions import TelegramBadRequest
 
 from src.bot.keyboards.inline import get_brewing_keyboard
-from src.bot.states import BrewingStates
+from src.bot.states import BrewingStates, TutorialStates
 from src.database.dal import (
     CraftingDAL,
     InsufficientFundsError,
     PlayerDAL,
     PlayerNotFoundError,
 )
+from src.database.models import Batch
 
 brewing_router = Router()
 
@@ -160,6 +162,69 @@ async def process_brew_invalid(callback: CallbackQuery, state: FSMContext) -> No
         f"⚠️ Сумма ингредиентов должна быть ровно 100%! Сейчас: {total}%",
         show_alert=True,
     )
+
+
+@brewing_router.callback_query(F.data == "tutorial:brew")
+async def process_tutorial_brew(
+    callback: CallbackQuery, state: FSMContext, session: AsyncSession
+) -> None:
+    """
+    Запускает тестовую варку для первого шага обучения.
+    """
+    if not callback.from_user or not callback.message or not isinstance(callback.message, Message):
+        await callback.answer()
+        return
+
+    tg_id = callback.from_user.id
+    player_dal = PlayerDAL(session)
+    crafting_dal = CraftingDAL(session)
+
+    try:
+        player = await player_dal.get_player(tg_id)
+    except PlayerNotFoundError:
+        await callback.answer("Профиль не найден. Напишите /start", show_alert=True)
+        return
+
+    if player.tutorial_step >= 1:
+        await state.set_state(TutorialStates.first_collect)
+        await callback.answer("Тестовая варка уже завершена.")
+        return
+
+    recipe = await crafting_dal.create_recipe(
+        int(player.player_id),
+        25,
+        25,
+        25,
+        25,
+        skill=1,
+        fatigue=0,
+        title="Тестовый базовый эль",
+    )
+
+    batch = Batch(
+        player_id=int(player.player_id),
+        recipe_id=int(recipe.recipe_id),
+        quantity_barrels=3,
+        quality_modifier=Decimal("1.00"),
+        is_completed=False,
+        ready_at=datetime.now(UTC),
+    )
+    session.add(batch)
+    await session.flush()
+    await player_dal.update_tutorial_step(tg_id, 1)
+    await state.set_state(TutorialStates.first_collect)
+
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="🟢 Собрать пиво", callback_data="inventory:collect_ready"))
+
+    await callback.message.edit_text(
+        "🔥 <b>Тестовый эль сварен!</b>\n\n"
+        "Первая партия готова к сбору: <code>3 бочки</code>.\n"
+        "Следующий шаг — собери ее, чтобы перенести пиво на склад.",
+        parse_mode="HTML",
+        reply_markup=builder.as_markup(),
+    )
+    await callback.answer("Тестовая варка готова!")
 
 
 @brewing_router.callback_query(
