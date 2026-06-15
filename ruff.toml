@@ -1,0 +1,24 @@
+# Target Python version
+target-version = "py313"
+
+# Line length limit
+line-length = 100
+
+[lint]
+# Enable Pyflakes (F) and pycodestyle (E, W) codes by default, plus isort (I)
+select = ["E", "F", "W", "I", "N", "UP", "ASYNC"]
+ignore = []
+
+# Allow fix behavior
+fixable = ["ALL"]
+unfixable = []
+
+[format]
+# Enable double quotes for strings
+quote-style = "double"
+
+# Enable standard indent
+indent-style = "space"
+
+# Keep trailing commas
+skip-magic-trailing-comma = false
