@@ -25,8 +25,9 @@ async def run_bot() -> None:
     Запуск бота в изолированном режиме.
     """
     from aiogram import Bot
-    from src.database.connection import async_session_factory
+
     from config import settings
+    from src.database.connection import async_session_factory
 
     bot = Bot(token=settings.BOT_TOKEN)
     dp = Dispatcher()
@@ -35,4 +36,3 @@ async def run_bot() -> None:
         await dp.start_polling(bot)
     finally:
         await bot.session.close()
-

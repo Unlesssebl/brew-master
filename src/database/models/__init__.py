@@ -16,5 +16,3 @@ from .economy_models import *  # noqa: F403, E402
 from .queue_models import *  # noqa: F403, E402
 
 __all__ = ["Base"]
-
-

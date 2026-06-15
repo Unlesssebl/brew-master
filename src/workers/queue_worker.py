@@ -1,5 +1,6 @@
 import asyncio
 import logging
+
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from src.database.dal import QueueDAL
@@ -29,9 +30,7 @@ async def run_queue_worker(
                 await asyncio.sleep(5)
                 continue
 
-            logger.info(
-                f"Processing task {task.task_id} of type '{task.task_type}'"
-            )
+            logger.info(f"Processing task {task.task_id} of type '{task.task_type}'")
 
             # Шаг 2: Обрабатываем задачу
             try:
@@ -47,16 +46,12 @@ async def run_queue_worker(
                             payload=event.model_dump(),
                             target_tg_id=task.payload.get("tg_id"),
                         )
-                        await QueueDAL.complete_task(
-                            session, task.task_id, success=True
-                        )
+                        await QueueDAL.complete_task(session, task.task_id, success=True)
                         await session.commit()
                 else:
                     # Для других типов задач просто завершаем их
                     async with session_maker() as session:
-                        await QueueDAL.complete_task(
-                            session, task.task_id, success=True
-                        )
+                        await QueueDAL.complete_task(session, task.task_id, success=True)
                         await session.commit()
             except Exception as inner_e:
                 logger.error(
@@ -64,13 +59,9 @@ async def run_queue_worker(
                     exc_info=True,
                 )
                 async with session_maker() as session:
-                    await QueueDAL.complete_task(
-                        session, task.task_id, success=False
-                    )
+                    await QueueDAL.complete_task(session, task.task_id, success=False)
                     await session.commit()
 
         except Exception as outer_e:
-            logger.critical(
-                f"Critical error in queue worker loop: {outer_e}", exc_info=True
-            )
+            logger.critical(f"Critical error in queue worker loop: {outer_e}", exc_info=True)
             await asyncio.sleep(5)

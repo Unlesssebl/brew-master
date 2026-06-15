@@ -3,6 +3,7 @@
 прогрессивный антимонопольный налог, ценообразование и насыщение рынка.
 Формулы в docs/04_math_and_economy.md.
 """
+
 import math
 from enum import Enum
 
@@ -12,6 +13,7 @@ class FractionMultiplier(float, Enum):
     Множители фракций для расчета цены сбыта.
     Гномы: 2.0, Эльфы: 0.8, Гоблины: 0.2.
     """
+
     DWARVES = 2.0
     GNOMES = 2.0
     ELVES = 0.8
@@ -46,16 +48,16 @@ def calculate_royalty_payouts(transactions: list) -> float:
         market_type = getattr(tx, "market_type", None)
         if market_type is None and isinstance(tx, dict):
             market_type = tx.get("market_type")
-            
+
         if market_type in ("legal", "grey"):
             volume = getattr(tx, "volume", None)
             if volume is None and isinstance(tx, dict):
                 volume = tx.get("volume", 0)
-                
+
             price = getattr(tx, "price", None)
             if price is None and isinstance(tx, dict):
                 price = tx.get("price", 0.0)
-                
+
             r_total += (volume or 0) * (price or 0.0) * 0.05
     return float(round(r_total, 2))
 
@@ -121,4 +123,3 @@ def calculate_final_barrel_price(
         k_quality=k_quality,
         d_penalty=d_penalty,
     )
-

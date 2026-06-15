@@ -1,3 +1,5 @@
+from .crafting_dal import CraftingDAL
+from .economy_dal import EconomyDAL
 from .exceptions import (
     DALError,
     InsufficientFundsError,
@@ -6,9 +8,7 @@ from .exceptions import (
     TaskNotFoundError,
 )
 from .player_dal import PlayerDAL
-from .crafting_dal import CraftingDAL
 from .queue_dal import QueueDAL
-from .economy_dal import EconomyDAL
 
 __all__ = [
     "DALError",
@@ -21,4 +21,3 @@ __all__ = [
     "QueueDAL",
     "EconomyDAL",
 ]
-

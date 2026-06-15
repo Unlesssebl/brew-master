@@ -3,7 +3,7 @@ from aiogram.filters import Command
 from aiogram.types import Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database.dal import PlayerDAL, CraftingDAL, PlayerNotFoundError, InsufficientFundsError
+from src.database.dal import CraftingDAL, InsufficientFundsError, PlayerDAL, PlayerNotFoundError
 
 craft_router = Router()
 
@@ -31,7 +31,7 @@ async def cmd_brew(message: Message, session: AsyncSession) -> None:
             "⚠️ <b>Ошибка:</b> Неверное количество аргументов!\n"
             "Использование: <code>/brew &lt;солод&gt; &lt;вода&gt; &lt;хмель&gt; &lt;дрожжи&gt;</code>\n"
             "Пример: <code>/brew 50 30 10 10</code>",
-            parse_mode="HTML"
+            parse_mode="HTML",
         )
         return
 
@@ -41,15 +41,14 @@ async def cmd_brew(message: Message, session: AsyncSession) -> None:
     except ValueError:
         await message.answer(
             "⚠️ <b>Ошибка:</b> Все аргументы должны быть целыми числами в диапазоне от 0 до 100!",
-            parse_mode="HTML"
+            parse_mode="HTML",
         )
         return
 
     # Валидация диапазонов
     if not all(0 <= val <= 100 for val in (m, w, h, y)):
         await message.answer(
-            "⚠️ <b>Ошибка:</b> Каждое число должно быть в диапазоне от 0 до 100!",
-            parse_mode="HTML"
+            "⚠️ <b>Ошибка:</b> Каждое число должно быть в диапазоне от 0 до 100!", parse_mode="HTML"
         )
         return
 
@@ -57,7 +56,7 @@ async def cmd_brew(message: Message, session: AsyncSession) -> None:
     if m + w + h + y != 100:
         await message.answer(
             "⚠️ <b>Ошибка:</b> Сумма всех четырех ингредиентов должна быть строго равна 100%!",
-            parse_mode="HTML"
+            parse_mode="HTML",
         )
         return
 
@@ -71,7 +70,7 @@ async def cmd_brew(message: Message, session: AsyncSession) -> None:
     except PlayerNotFoundError:
         await message.answer(
             "⚠️ Вы не зарегистрированы в игре. Напишите /start, чтобы начать приключение!",
-            parse_mode="HTML"
+            parse_mode="HTML",
         )
         return
 
@@ -80,11 +79,15 @@ async def cmd_brew(message: Message, session: AsyncSession) -> None:
     if staff:
         skill = staff.skill
         fatigue = staff.fatigue
-        staff_info = f"🧙‍♂️ Алхимик: <b>{html.quote(staff.name)}</b> (Навык: {skill}, Усталость: {fatigue}%)"
+        staff_info = (
+            f"🧙‍♂️ Алхимик: <b>{html.quote(staff.name)}</b> (Навык: {skill}, Усталость: {fatigue}%)"
+        )
     else:
         skill = 1
         fatigue = 0
-        staff_info = "🧙‍♂️ Алхимик: отсутствует (используются параметры по умолчанию: skill=1, fatigue=0)"
+        staff_info = (
+            "🧙‍♂️ Алхимик: отсутствует (используются параметры по умолчанию: skill=1, fatigue=0)"
+        )
 
     try:
         # Запуск создания рецепта в DAL
@@ -92,16 +95,10 @@ async def cmd_brew(message: Message, session: AsyncSession) -> None:
             player.player_id, m, w, h, y, skill, fatigue, title="Экспериментальная варка"
         )
     except InsufficientFundsError as e:
-        await message.answer(
-            f"❌ <b>Ошибка списания:</b> {html.quote(str(e))}",
-            parse_mode="HTML"
-        )
+        await message.answer(f"❌ <b>Ошибка списания:</b> {html.quote(str(e))}", parse_mode="HTML")
         return
     except ValueError as e:
-        await message.answer(
-            f"❌ <b>Ошибка валидации:</b> {html.quote(str(e))}",
-            parse_mode="HTML"
-        )
+        await message.answer(f"❌ <b>Ошибка валидации:</b> {html.quote(str(e))}", parse_mode="HTML")
         return
 
     # Красивый вывод результатов варки (аналогично BeerStatsDTO)

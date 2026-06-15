@@ -8,6 +8,7 @@ class BeerStatsDTO:
     """
     DTO для хранения характеристик пива.
     """
+
     strength: float
     bitterness: float
     aroma: float
@@ -97,7 +98,7 @@ def calculate_beer_stats(
 ) -> BeerStatsDTO:
     """
     Выполняет полный расчет характеристик пива с валидацией входных данных.
-    
+
     Входные параметры:
     - malt_pct (M): Пропорция солода (0-100)
     - water_pct (W): Пропорция воды (0-100)
@@ -105,7 +106,7 @@ def calculate_beer_stats(
     - yeast_pct (Y): Пропорция дрожжей (0-100)
     - skill: Навык алхимика (1-100)
     - fatigue: Усталость алхимика (0-100)
-    
+
     Возвращает BeerStatsDTO с округленными параметрами:
     - strength: float (округлено до 2 знаков)
     - bitterness: float (округлено до 2 знаков)
@@ -113,16 +114,23 @@ def calculate_beer_stats(
     - stability: int (округлено/приведено к int в диапазоне 0-100)
     """
     # Валидация диапазонов
-    for name, val in [("malt_pct", malt_pct), ("water_pct", water_pct), ("hop_pct", hop_pct), ("yeast_pct", yeast_pct)]:
+    for name, val in [
+        ("malt_pct", malt_pct),
+        ("water_pct", water_pct),
+        ("hop_pct", hop_pct),
+        ("yeast_pct", yeast_pct),
+    ]:
         if not (0 <= val <= 100):
             raise ValueError(f"Параметр {name} должен быть в диапазоне от 0 до 100")
-            
+
     if not (1 <= skill <= 100):
         raise ValueError("Навык алхимика (skill) должен быть в диапазоне от 1 до 100")
-        
+
     # Валидация суммы
     if malt_pct + water_pct + hop_pct + yeast_pct != 100:
-        raise ValueError("Сумма пропорций ингредиентов (M + W + H + Y) должна быть строго равна 100")
+        raise ValueError(
+            "Сумма пропорций ингредиентов (M + W + H + Y) должна быть строго равна 100"
+        )
 
     strength = calculate_strength(malt_pct, water_pct, hop_pct, yeast_pct)
     bitterness = calculate_bitterness(malt_pct, water_pct, hop_pct, yeast_pct)
@@ -135,5 +143,3 @@ def calculate_beer_stats(
         aroma=round(aroma, 2),
         stability=int(min(100, max(0, stability))),
     )
-
-

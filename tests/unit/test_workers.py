@@ -1,9 +1,9 @@
 import asyncio
-from unittest.mock import AsyncMock, MagicMock
-from decimal import Decimal
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
-from src.database.dal import EconomyDAL, PlayerDAL, QueueDAL
+from src.database.dal import EconomyDAL, QueueDAL
 from src.database.models import Task
 from src.llm_engine.schemas import EventChoice, GameEvent
 from src.workers.queue_worker import run_queue_worker
@@ -76,11 +76,8 @@ async def test_royalty_worker_iteration():
         return_value=[{"recipe_id": 1, "total_revenue": 1000.0}]
     )
     EconomyDAL.get_active_patents_for_recipes = AsyncMock(
-        return_value=[
-            {"patent_id": 10, "player_id": 100, "royalty_earned_24h": 100.0}
-        ]
+        return_value=[{"patent_id": 10, "player_id": 100, "royalty_earned_24h": 100.0}]
     )
-    PlayerDAL.change_gold = AsyncMock()
     EconomyDAL.mark_transactions_processed = AsyncMock()
 
     original_sleep = asyncio.sleep
@@ -90,19 +87,22 @@ async def test_royalty_worker_iteration():
 
     asyncio.sleep = mock_sleep
 
-    try:
-        await run_royalty_worker(session_maker)
-    except asyncio.CancelledError:
-        pass
-    finally:
-        asyncio.sleep = original_sleep
+    with patch("src.workers.royalty.PlayerDAL") as mock_player_dal_class:
+        mock_p_dal = mock_player_dal_class.return_value
+        mock_p_dal.change_gold = AsyncMock()
+
+        try:
+            await run_royalty_worker(session_maker)
+        except asyncio.CancelledError:
+            pass
+        finally:
+            asyncio.sleep = original_sleep
+
+        mock_player_dal_class.assert_called_once_with(session)
+        # Ожидаемый налог: 50 + 100 * 0.15 = 65
+        mock_p_dal.change_gold.assert_any_call(100, -65.0)
+        # Ожидаемый роялти: 1000 * 0.05 = 50
+        mock_p_dal.change_gold.assert_any_call(100, 50.0)
 
     EconomyDAL.get_unprocessed_royalties.assert_called_once()
-
-    # Ожидаемый налог: 50 + 100 * 0.15 = 65
-    PlayerDAL.change_gold.assert_any_call(session, 100, -65.0)
-    # Ожидаемый роялти: 1000 * 0.05 = 50
-    PlayerDAL.change_gold.assert_any_call(session, 100, 50.0)
-    EconomyDAL.mark_transactions_processed.assert_called_once_with(
-        session, [1]
-    )
+    EconomyDAL.mark_transactions_processed.assert_called_once_with(session, [1])

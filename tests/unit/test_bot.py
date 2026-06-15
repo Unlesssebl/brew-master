@@ -1,12 +1,13 @@
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from aiogram.types import Message, User
 from decimal import Decimal
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.bot.handlers.basic import cmd_start, cmd_profile
+import pytest
+from aiogram.types import Message, User
+
+from src.bot.handlers.basic import cmd_profile, cmd_start
 from src.bot.handlers.craft import cmd_brew
-from src.database.dal import PlayerNotFoundError, InsufficientFundsError
-from src.database.models import Player, TavernTier, Staff, StaffRole
+from src.database.dal import PlayerNotFoundError
+from src.database.models import Player, Staff, StaffRole, TavernTier
 
 
 @pytest.mark.asyncio
@@ -71,7 +72,7 @@ async def test_cmd_profile() -> None:
         gold=Decimal("1200.50"),
         reputation=10,
         influence=5,
-        tavern_level=TavernTier.garage
+        tavern_level=TavernTier.garage,
     )
 
     with patch("src.bot.handlers.basic.PlayerDAL") as mock_dal_class:
@@ -113,7 +114,7 @@ async def test_cmd_brew_success() -> None:
     session = AsyncMock()
     mock_player = Player(player_id=1, tg_id=12345)
     mock_staff = Staff(name="Alchemist", role=StaffRole.master_alchemist, skill=80, fatigue=10)
-    
+
     mock_recipe = MagicMock()
     mock_recipe.title = "Экспериментальная варка"
     mock_recipe.malt_pct = 50
@@ -125,9 +126,10 @@ async def test_cmd_brew_success() -> None:
     mock_recipe.aroma = Decimal("8.0")
     mock_recipe.stability = 90
 
-    with patch("src.bot.handlers.craft.PlayerDAL") as mock_player_dal_class, \
-         patch("src.bot.handlers.craft.CraftingDAL") as mock_crafting_dal_class:
-        
+    with (
+        patch("src.bot.handlers.craft.PlayerDAL") as mock_player_dal_class,
+        patch("src.bot.handlers.craft.CraftingDAL") as mock_crafting_dal_class,
+    ):
         mock_p_dal = mock_player_dal_class.return_value
         mock_p_dal.get_player = AsyncMock(return_value=mock_player)
         mock_p_dal.get_active_staff = AsyncMock(return_value=mock_staff)

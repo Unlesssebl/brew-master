@@ -1,5 +1,6 @@
 import asyncio
 import logging
+
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 logger = logging.getLogger(__name__)
@@ -23,9 +24,7 @@ async def run_rival_ceo_worker(session_maker: async_sessionmaker) -> None:
             #    D_penalty = e^(-λ * max(0, V_sold - Threshold))
 
         except Exception as e:
-            logger.error(
-                f"Error during Rival CEO worker execution: {e}", exc_info=True
-            )
+            logger.error(f"Error during Rival CEO worker execution: {e}", exc_info=True)
 
         # Спим 12 часов (43200 секунд)
         await asyncio.sleep(43200)

@@ -54,7 +54,7 @@ async def cmd_profile(message: Message, session: AsyncSession) -> None:
     except PlayerNotFoundError:
         await message.answer(
             "Вы не зарегистрированы в игре. Напишите /start, чтобы начать приключение!",
-            parse_mode="HTML"
+            parse_mode="HTML",
         )
         return
 

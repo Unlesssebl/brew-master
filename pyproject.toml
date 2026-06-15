@@ -24,3 +24,8 @@ dev = [
 [tool.pyright]
 extraPaths = ["."]
 
+
+[tool.pytest.ini_options]
+addopts = "--import-mode=importlib"
+asyncio_mode = "auto"
+

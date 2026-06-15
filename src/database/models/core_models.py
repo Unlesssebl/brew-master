@@ -50,24 +50,18 @@ class Player(Base):
     __table_args__ = (
         CheckConstraint("gold >= 0", name="chk_player_gold"),
         CheckConstraint("prestige_crystals >= 0", name="chk_player_crystals"),
-        CheckConstraint(
-            "reputation BETWEEN -100 AND 100", name="chk_player_reputation"
-        ),
+        CheckConstraint("reputation BETWEEN -100 AND 100", name="chk_player_reputation"),
         CheckConstraint("influence BETWEEN 0 AND 100", name="chk_player_influence"),
         Index("idx_players_tg_id", "tg_id"),
         {"schema": "core"},
     )
 
-    player_id: Mapped[int] = mapped_column(
-        BigInteger, primary_key=True, autoincrement=True
-    )
+    player_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     tg_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=False)
     gold: Mapped[Decimal] = mapped_column(
         Numeric(15, 2), nullable=False, default=Decimal("1000.00")
     )
-    prestige_crystals: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0
-    )
+    prestige_crystals: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     reputation: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0)
     influence: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0)
     tavern_level: Mapped[TavernTier] = mapped_column(
@@ -119,9 +113,7 @@ class Staff(Base):
         {"schema": "core"},
     )
 
-    staff_id: Mapped[int] = mapped_column(
-        BigInteger, primary_key=True, autoincrement=True
-    )
+    staff_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     player_id: Mapped[int] = mapped_column(
         BigInteger,
         ForeignKey("core.players.player_id", ondelete="CASCADE"),

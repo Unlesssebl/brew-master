@@ -1,11 +1,12 @@
 import json
 import logging
-from typing import Any, Callable, Awaitable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from pydantic import ValidationError
 
-from src.llm_engine.schemas import GameEvent, get_fallback_event
 from src.llm_engine.prompts import build_event_prompt
+from src.llm_engine.schemas import GameEvent, get_fallback_event
 
 logger = logging.getLogger(__name__)
 

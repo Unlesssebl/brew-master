@@ -1,5 +1,6 @@
 import asyncio
 import logging
+
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -25,16 +26,16 @@ async def run_royalty_worker(session_maker: async_sessionmaker) -> None:
                     # 1. Получаем не обработанные роялти
                     royalties = await EconomyDAL.get_unprocessed_royalties(session)
 
+                    player_dal = PlayerDAL(session)
+
                     if royalties:
                         for entry in royalties:
                             recipe_id = entry["recipe_id"]
                             total_revenue = entry["total_revenue"]
 
                             # a. Получаем активные патенты для данного рецепта
-                            patents = (
-                                await EconomyDAL.get_active_patents_for_recipes(
-                                    session, [recipe_id]
-                                )
+                            patents = await EconomyDAL.get_active_patents_for_recipes(
+                                session, [recipe_id]
                             )
 
                             # b. Для каждого патента обрабатываем налог и выплату
@@ -51,9 +52,7 @@ async def run_royalty_worker(session_maker: async_sessionmaker) -> None:
 
                                 # Попытка списать налог
                                 try:
-                                    await PlayerDAL.change_gold(
-                                        session, player_id, -tax
-                                    )
+                                    await player_dal.change_gold(player_id, -tax)
                                     tax_paid = True
                                     logger.info(
                                         f"Tax of {tax} successfully collected from player {player_id} for patent {patent_id}."
@@ -74,26 +73,18 @@ async def run_royalty_worker(session_maker: async_sessionmaker) -> None:
 
                                 # Если налог списан успешно (или был 0): начисли роялти
                                 if tax_paid:
-                                    await PlayerDAL.change_gold(
-                                        session, player_id, payout
-                                    )
+                                    await player_dal.change_gold(player_id, payout)
                                     logger.info(
                                         f"Royalty of {payout} paid to player {player_id} for recipe {recipe_id}."
                                     )
 
                         # 3. Помечаем транзакции как обработанные
                         recipe_ids = [r["recipe_id"] for r in royalties]
-                        await EconomyDAL.mark_transactions_processed(
-                            session, recipe_ids
-                        )
-                        logger.info(
-                            f"Marked transactions processed for recipes: {recipe_ids}"
-                        )
+                        await EconomyDAL.mark_transactions_processed(session, recipe_ids)
+                        logger.info(f"Marked transactions processed for recipes: {recipe_ids}")
 
         except Exception as e:
-            logger.error(
-                f"Error during royalty worker execution: {e}", exc_info=True
-            )
+            logger.error(f"Error during royalty worker execution: {e}", exc_info=True)
 
         # Спим ровно час
         await asyncio.sleep(3600)

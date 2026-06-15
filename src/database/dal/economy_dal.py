@@ -37,9 +37,7 @@ class EconomyDAL:
         ]
 
     @staticmethod
-    async def mark_transactions_processed(
-        session: AsyncSession, recipe_ids: list[int]
-    ) -> None:
+    async def mark_transactions_processed(session: AsyncSession, recipe_ids: list[int]) -> None:
         """
         Массовый UPDATE processed_for_royalty = True для указанных recipe_id.
         """
@@ -65,9 +63,7 @@ class EconomyDAL:
         if not recipe_ids:
             return []
 
-        stmt = select(
-            Patent.patent_id, Patent.player_id, Patent.royalty_earned_24h
-        ).where(
+        stmt = select(Patent.patent_id, Patent.player_id, Patent.royalty_earned_24h).where(
             Patent.recipe_id.in_(recipe_ids),
             Patent.is_active == True,  # noqa: E712
             Patent.expires_at > func.now(),

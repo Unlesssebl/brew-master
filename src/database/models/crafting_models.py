@@ -31,16 +31,10 @@ class Recipe(Base):
         CheckConstraint("water_pct BETWEEN 0 AND 100", name="chk_water_range"),
         CheckConstraint("hop_pct BETWEEN 0 AND 100", name="chk_hop_range"),
         CheckConstraint("yeast_pct BETWEEN 0 AND 100", name="chk_yeast_range"),
-        CheckConstraint(
-            "strength BETWEEN 0.00 AND 20.00", name="chk_beer_strength"
-        ),
-        CheckConstraint(
-            "bitterness BETWEEN 0.00 AND 20.00", name="chk_beer_bitterness"
-        ),
+        CheckConstraint("strength BETWEEN 0.00 AND 20.00", name="chk_beer_strength"),
+        CheckConstraint("bitterness BETWEEN 0.00 AND 20.00", name="chk_beer_bitterness"),
         CheckConstraint("aroma BETWEEN 0.00 AND 20.00", name="chk_beer_aroma"),
-        CheckConstraint(
-            "stability BETWEEN 0 AND 100", name="chk_beer_stability"
-        ),
+        CheckConstraint("stability BETWEEN 0 AND 100", name="chk_beer_stability"),
         CheckConstraint(
             "malt_pct + water_pct + hop_pct + yeast_pct = 100",
             name="chk_total_proportions_100",
@@ -49,9 +43,7 @@ class Recipe(Base):
         {"schema": "crafting"},
     )
 
-    recipe_id: Mapped[int] = mapped_column(
-        BigInteger, primary_key=True, autoincrement=True
-    )
+    recipe_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     creator_id: Mapped[int | None] = mapped_column(
         BigInteger,
         ForeignKey("core.players.player_id", ondelete="SET NULL"),
@@ -91,9 +83,7 @@ class Patent(Base):
         {"schema": "crafting"},
     )
 
-    patent_id: Mapped[int] = mapped_column(
-        BigInteger, primary_key=True, autoincrement=True
-    )
+    patent_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     player_id: Mapped[int] = mapped_column(
         BigInteger,
         ForeignKey("core.players.player_id", ondelete="CASCADE"),
@@ -114,9 +104,7 @@ class Patent(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
-    expires_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     # Relationships
     player: Mapped["Player"] = relationship(back_populates="patents")
@@ -140,9 +128,7 @@ class Batch(Base):
         {"schema": "crafting"},
     )
 
-    batch_id: Mapped[int] = mapped_column(
-        BigInteger, primary_key=True, autoincrement=True
-    )
+    batch_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     player_id: Mapped[int] = mapped_column(
         BigInteger,
         ForeignKey("core.players.player_id", ondelete="CASCADE"),
@@ -158,12 +144,8 @@ class Batch(Base):
         Numeric(3, 2), nullable=False, default=Decimal("1.00")
     )
 
-    is_completed: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False
-    )
-    ready_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
+    is_completed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    ready_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

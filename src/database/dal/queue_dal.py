@@ -2,6 +2,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.models import Task
+
 from .exceptions import TaskNotFoundError
 
 
@@ -14,8 +15,8 @@ class QueueDAL:
     async def fetch_next_task(session: AsyncSession) -> Task | None:
         """
         Атомарно захватывает следующую задачу в обработку (Queue Worker Pattern).
-        
-        Использует FOR UPDATE SKIP LOCKED для предотвращения конкурентного захвата 
+
+        Использует FOR UPDATE SKIP LOCKED для предотвращения конкурентного захвата
         одной и той же задачи несколькими воркерами.
         """
         subq = (
@@ -77,4 +78,3 @@ class QueueDAL:
         session.add(task)
         await session.flush()
         return task
-

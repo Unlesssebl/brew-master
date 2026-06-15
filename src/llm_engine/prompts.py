@@ -52,6 +52,4 @@ def build_event_prompt(player_state: dict[str, Any]) -> str:
         tone_style = "Нейтрально-атмосферный фэнтези-стиль"
 
     player_state_json = json.dumps(player_state, ensure_ascii=False, indent=2)
-    return SYSTEM_EVENT_PROMPT.format(
-        player_state=player_state_json, tone_style=tone_style
-    )
+    return SYSTEM_EVENT_PROMPT.format(player_state=player_state_json, tone_style=tone_style)

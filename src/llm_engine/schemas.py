@@ -1,5 +1,4 @@
 from pydantic import BaseModel, Field, field_validator
-from typing import List
 
 
 class EventChoice(BaseModel):
@@ -16,11 +15,11 @@ class EventChoice(BaseModel):
 class GameEvent(BaseModel):
     event_title: str = Field(..., max_length=50)
     event_description: str = Field(...)
-    choices: List[EventChoice] = Field(..., min_length=1, max_length=3)
+    choices: list[EventChoice] = Field(..., min_length=1, max_length=3)
 
     @field_validator("choices")
     @classmethod
-    def check_balance_logic(cls, choices: List[EventChoice]) -> List[EventChoice]:
+    def check_balance_logic(cls, choices: list[EventChoice]) -> list[EventChoice]:
         for choice in choices:
             # Проверяем наличие чистого положительного прироста без каких-либо затрат
             has_positive_gain = (

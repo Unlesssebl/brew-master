@@ -1,14 +1,15 @@
 import pytest
-from src.core.crafting import calculate_beer_stats, BeerStatsDTO
+
+from src.core.crafting import BeerStatsDTO, calculate_beer_stats
 from src.core.economy import (
     FractionMultiplier,
-    calculate_patent_tax,
+    calculate_final_barrel_price,
+    calculate_final_price,
+    calculate_market_saturation_penalty,
     calculate_patent_daily_tax,
+    calculate_patent_tax,
     calculate_royalty_payouts,
     calculate_saturation_penalty,
-    calculate_market_saturation_penalty,
-    calculate_final_price,
-    calculate_final_barrel_price,
 )
 from src.core.pvp import (
     calculate_reverse_engineering_chance,
@@ -25,7 +26,7 @@ def test_calculate_beer_stats_valid():
     assert isinstance(stats.bitterness, float)
     assert isinstance(stats.aroma, float)
     assert isinstance(stats.stability, int)
-    
+
     # Verify calculated values are rounded appropriately
     # Str: (30 * sqrt(10) / 15) * (1.2 - 40/100) = (2 * 3.162277) * 0.8 = 6.3245 * 0.8 = 5.06
     assert stats.strength == pytest.approx(5.06, abs=0.01)
@@ -46,14 +47,14 @@ def test_calculate_beer_stats_validation():
     # Ingredient value out of bounds
     with pytest.raises(ValueError, match="диапазоне от 0 до 100"):
         calculate_beer_stats(-10, 50, 30, 30, 50, 0)
-        
+
     with pytest.raises(ValueError, match="диапазоне от 0 до 100"):
         calculate_beer_stats(105, -5, 0, 0, 50, 0)
 
     # Skill value out of bounds
     with pytest.raises(ValueError, match="Навык алхимика"):
         calculate_beer_stats(30, 40, 20, 10, 0, 0)
-        
+
     with pytest.raises(ValueError, match="Навык алхимика"):
         calculate_beer_stats(30, 40, 20, 10, 101, 0)
 
@@ -95,7 +96,7 @@ def test_economy_saturation_penalty():
     # V=600, Threshold=500, Lambda=0.001 -> e^(-0.001 * 100) = e^(-0.1) = 0.904837
     val1 = calculate_saturation_penalty(600.0, 500, 0.001)
     assert val1 == 0.9048
-    
+
     # Under threshold -> e^0 = 1.0000
     val2 = calculate_market_saturation_penalty(400.0, 500.0, 0.001)
     assert val2 == 1.0
@@ -112,7 +113,9 @@ def test_pvp_reverse_engineering_chance():
     # min(95, max(5, 60 + Skill / 2))
     assert calculate_reverse_engineering_chance(50) == 85
     assert calculate_reverse_engineering_chance(100) == 95  # 60 + 50 = 110 -> 95
-    assert calculate_reverse_engineering_chance(1) == 60  # 60 + 0.5 = 60.5 -> int(60.5) = 60 (actually if math.floor or int is used)
+    assert (
+        calculate_reverse_engineering_chance(1) == 60
+    )  # 60 + 0.5 = 60.5 -> int(60.5) = 60 (actually if math.floor or int is used)
 
 
 def test_pvp_sabotage_chance():

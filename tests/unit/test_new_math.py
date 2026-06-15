@@ -1,16 +1,17 @@
-import pytest
 from datetime import datetime, timedelta
+
+import pytest
+
 from src.config import settings
-from src.core.config import GameBalance
-from src.core.prestige import calculate_prestige_crystals
 from src.core.expeditions import (
     ExpeditionEventType,
     calculate_expedition_event_chance,
     calculate_expedition_outcome,
     calculate_injury_consequences,
 )
-from src.core.staff_events import calculate_staff_event_chance
 from src.core.offline_progress import calculate_offline_production
+from src.core.prestige import calculate_prestige_crystals
+from src.core.staff_events import calculate_staff_event_chance
 
 
 def test_game_balance_config():
@@ -99,7 +100,6 @@ def test_calculate_staff_event_chance():
         calculate_staff_event_chance(101, 50)
     with pytest.raises(ValueError, match="fatigue"):
         calculate_staff_event_chance(50, -1)
-
 
 
 def test_calculate_offline_production():
