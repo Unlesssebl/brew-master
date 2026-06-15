@@ -1,13 +1,16 @@
-import argparse
 import asyncio
 import logging
+from aiogram import Bot, Dispatcher
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
-from src.bot import run_bot
-from src.config import settings
-from src.workers.rival_ceo import run_rival_ceos
-from src.workers.royalty import run_worker as run_royalty_worker
+from config import settings
+from src.bot import setup_routers
+from src.workers.queue_worker import run_queue_worker
+from src.workers.royalty import run_royalty_worker
+from src.workers.rival_ceo import run_rival_ceo_worker
+from src.llm_engine import LLMEventGenerator
 
-# Настройка логирования
+# Setup logging configuration
 logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO),
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -15,55 +18,87 @@ logging.basicConfig(
 logger = logging.getLogger("main")
 
 
-async def run_all():
+async def call_llm_api(prompt: str) -> str:
     """
-    Запуск всех компонентов Beer Empire (бот и фоновые воркеры) параллельно.
+    Асинхронный вызов Google Gemini API с использованием официального клиента google-genai.
+    В случае отсутствия ключа LLM_API_KEY возвращается стандартное заглушечное событие.
     """
-    logger.info("Starting all components (bot and workers)...")
-    await asyncio.gather(
-        run_bot(),
-        run_royalty_worker(),
-        run_rival_ceos(),
-    )
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Beer Empire Entrypoint")
-    parser.add_argument(
-        "--run",
-        choices=["bot", "worker-royalty", "worker-rival-ceo", "all"],
-        default="all",
-        help="Specify which component to run (default: all)",
-    )
-    args = parser.parse_args()
-
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-    if args.run == "bot":
-        coro = run_bot()
-    elif args.run == "worker-royalty":
-        coro = run_royalty_worker()
-    elif args.run == "worker-rival-ceo":
-        coro = run_rival_ceos()
-    else:
-        coro = run_all()
+    if not settings.LLM_API_KEY:
+        logger.warning("LLM_API_KEY не задан. Используется заглушка для генерации события.")
+        return (
+            '{"event_title": "Затишье в таверне", '
+            '"event_description": "В таверне подозрительно тихо. Никаких событий сегодня не произошло.", '
+            '"choices": []}'
+        )
 
     try:
-        loop.run_until_complete(coro)
-    except KeyboardInterrupt:
-        logger.info("Received exit signal, shutting down...")
+        from google import genai
+        # Инициализируем клиент Google GenAI
+        client = genai.Client(api_key=settings.LLM_API_KEY)
+        response = await client.aio.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+        )
+        return response.text
+    except Exception as e:
+        logger.error(f"Ошибка при вызове Gemini API: {e}", exc_info=True)
+        raise
+
+
+async def main() -> None:
+    """
+    Главная точка входа оркестратора.
+    Инициализирует подключение к базе данных, бота Telegram
+    и запускает все фоновые процессы параллельно.
+    """
+    # Инициализация асинхронного движка базы данных
+    engine = create_async_engine(
+        settings.DATABASE_URL,
+        echo=settings.LOG_LEVEL.upper() == "DEBUG",
+        pool_pre_ping=True,
+    )
+
+    # Фабрика асинхронных сессий SQLAlchemy
+    session_maker = async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+
+    # Инициализация Bot и Dispatcher для Telegram
+    bot = Bot(token=settings.BOT_TOKEN)
+    dp = Dispatcher()
+
+    # Регистрация обработчиков и middleware в диспетчере
+    setup_routers(dp, session_maker)
+
+    # Инициализация генератора игровых событий на базе LLM
+    llm_generator = LLMEventGenerator(call_llm_api=call_llm_api)
+
+    logger.info("Запуск Beer Empire оркестратора (бот и фоновые процессы)...")
+
+    try:
+        # Запуск параллельных задач через gather
+        await asyncio.gather(
+            dp.start_polling(bot),
+            run_queue_worker(session_maker, llm_generator),
+            run_royalty_worker(session_maker),
+            run_rival_ceo_worker(session_maker),
+        )
+    except asyncio.CancelledError:
+        logger.info("Получен сигнал отмены. Завершение работы...")
     finally:
-        # Отменяем все оставшиеся задачи для корректного завершения
-        pending = asyncio.all_tasks(loop)
-        for task in pending:
-            task.cancel()
-        if pending:
-            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
-        loop.close()
-        logger.info("Shutdown complete.")
+        logger.info("Закрытие сессии бота...")
+        await bot.session.close()
+        logger.info("Закрытие соединений с базой данных...")
+        await engine.dispose()
+        logger.info("Работа приложения полностью завершена.")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Процесс прерван пользователем (KeyboardInterrupt). Завершение работы...")
+
 
