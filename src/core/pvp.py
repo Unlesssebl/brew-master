@@ -2,23 +2,30 @@
 Модуль для расчета вероятностных PVP-событий (диверсии, промышленный шпионаж).
 Подробности в docs/04_math_and_economy.md.
 """
+import math
+import random
 
 
-def calculate_reverse_engineering_chance(skill_alchemist: int) -> float:
+def calculate_reverse_engineering_chance(skill_alchemist: int) -> int:
     """
     Вычисляет шанс успешной обратной разработки чертежа рецепта.
     Формула: Chance = min(95, max(5, 60 + Skill / 2))
+    Возвращает целое число процентов (int).
     """
-    pass
+    chance = 60.0 + skill_alchemist / 2.0
+    return int(min(95, max(5, chance)))
 
 
 def calculate_sabotage_chance(
     influence_atk: int,
     guard_lvl_def: int,
     base_chance: float = 50.0,
-) -> float:
+) -> int:
     """
     Вычисляет шанс успешной диверсии (подкуп, слухи) с учетом защиты цели.
     Формула: Chance = min(90, max(10, Base_chance + Influence_atk - Guard_lvl * 10))
+    Возвращает целое число процентов (int).
     """
-    pass
+    chance = base_chance + influence_atk - guard_lvl_def * 10
+    return int(min(90, max(10, chance)))
+
