@@ -1,4 +1,5 @@
 from pydantic import BaseModel, Field, field_validator
+from typing import List
 
 
 class EventChoice(BaseModel):
@@ -15,11 +16,11 @@ class EventChoice(BaseModel):
 class GameEvent(BaseModel):
     event_title: str = Field(..., max_length=50)
     event_description: str = Field(...)
-    choices: list[EventChoice] = Field(..., min_length=1, max_length=3)
+    choices: List[EventChoice] = Field(..., min_length=1, max_length=3)
 
     @field_validator("choices")
     @classmethod
-    def check_balance_logic(cls, choices: list[EventChoice]) -> list[EventChoice]:
+    def check_balance_logic(cls, choices: List[EventChoice]) -> List[EventChoice]:
         for choice in choices:
             # Проверяем наличие чистого положительного прироста без каких-либо затрат
             has_positive_gain = (
@@ -36,7 +37,27 @@ class GameEvent(BaseModel):
             # Если есть плюсы, но нет минусов (затрат), это нарушение баланса
             if has_positive_gain and not has_any_cost:
                 raise ValueError(
-                    f"Выбор '{choice.choice_id}' дает положительные эффекты без видимых затрат. "
-                    "Нарушение баланса."
+                    "Выбор дает только положительные эффекты без видимых затрат. Нарушение баланса."
                 )
         return choices
+
+
+def get_fallback_event() -> GameEvent:
+    """
+    Возвращает безопасный дефолтный объект GameEvent (нейтральное событие с нулевыми изменениями ресурсов),
+    который используется при полном отказе LLM.
+    """
+    return GameEvent(
+        event_title="Спокойный день",
+        event_description="Сегодня в таверне на удивление спокойно. Посетители мирно пьют пиво, никаких происшествий не происходит.",
+        choices=[
+            EventChoice(
+                choice_id="fallback_continue",
+                button_text="Продолжить работу",
+                result_text="День проходит без приключений и лишних трат.",
+                gold_change=0,
+                reputation_change=0,
+                influence_change=0,
+            )
+        ],
+    )
