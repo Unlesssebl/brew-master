@@ -12,7 +12,7 @@ from src.database.dal import (
     QueueDAL,
     TaskNotFoundError,
 )
-from src.database.models import Player, Recipe, Task
+from src.database.models import Player, Recipe, Task, TavernTier, Resource, Staff
 
 
 @pytest.mark.asyncio
@@ -228,3 +228,58 @@ async def test_economy_dal_get_active_patents_for_recipes():
     assert len(res) == 2
     assert res[0] == {"patent_id": 10, "player_id": 100, "royalty_earned_24h": 50.0}
     assert res[1] == {"patent_id": 11, "player_id": 101, "royalty_earned_24h": 0.0}
+
+
+@pytest.mark.asyncio
+async def test_player_dal_upgrade_tavern_level_success():
+    session = AsyncMock()
+    mock_player = Player(player_id=1, tavern_level=TavernTier.garage, gold=Decimal("1000.00"))
+
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = mock_player
+    session.execute.return_value = mock_result
+
+    dal = PlayerDAL(session)
+    next_tier = await dal.upgrade_tavern_level(1)
+    assert next_tier == TavernTier.tavern
+
+
+@pytest.mark.asyncio
+async def test_player_dal_update_player_stats():
+    session = AsyncMock()
+    mock_player = Player(player_id=1, gold=Decimal("100.00"), reputation=10, influence=5)
+
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = mock_player
+    session.execute.return_value = mock_result
+
+    dal = PlayerDAL(session)
+    await dal.update_player_stats(1, gold_change=50, reputation_change=10, influence_change=-2)
+    session.execute.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_player_dal_create_staff():
+    session = AsyncMock()
+    dal = PlayerDAL(session)
+    staff = await dal.create_staff(1, "Olaf", "master_alchemist", 45)
+    assert isinstance(staff, Staff)
+    assert staff.name == "Olaf"
+    assert staff.role == "master_alchemist"
+    assert staff.skill == 45
+    session.add.assert_called_once_with(staff)
+    session.flush.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_player_dal_get_resources():
+    session = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = []
+    session.execute.return_value = mock_result
+
+    dal = PlayerDAL(session)
+    res = await dal.get_resources(1)
+    assert "malt" in res
+    assert "water" in res
+    assert res["malt"] == Decimal("0.00")

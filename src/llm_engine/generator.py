@@ -17,13 +17,17 @@ class LLMEventGenerator:
     Реализует пайплайн: создание промпта, запрос к LLM, валидация и обработка ошибок.
     """
 
-    def __init__(self, call_llm_api: Callable[[str], Awaitable[str]]) -> None:
+    def __init__(self, call_llm_api: Callable[[str], Awaitable[str]] | None = None) -> None:
         """
         Инициализация генератора.
 
         :param call_llm_api: Асинхронный вызываемый объект (async def (prompt: str) -> str)
         """
-        self._call_llm_api = call_llm_api
+        if call_llm_api is None:
+            from src.llm_engine.api_client import call_llm_api as default_call
+            self._call_llm_api = default_call
+        else:
+            self._call_llm_api = call_llm_api
 
     async def generate_event(self, player_state: dict[str, Any]) -> GameEvent:
         """
