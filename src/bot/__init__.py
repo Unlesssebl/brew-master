@@ -1,18 +1,20 @@
-# Telegram API Gateway (Бот-клиент)
-import asyncio
-import logging
+from aiogram import Dispatcher
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
-logger = logging.getLogger(__name__)
+from .handlers.basic import basic_router
+from .handlers.craft import craft_router
+from .middlewares.db import DbSessionMiddleware
 
 
-async def run_bot():
+def setup_routers(dp: Dispatcher, session_maker: async_sessionmaker) -> None:
     """
-    Основной цикл запуска Telegram-бота.
+    Настройка роутеров и регистрация middleware для диспетчера aiogram.
     """
-    logger.info("Starting Beer Empire Telegram Bot...")
-    try:
-        # Ожидаем бесконечно, пока задача не будет отменена
-        await asyncio.Event().wait()
-    except asyncio.CancelledError:
-        logger.info("Telegram Bot received stop signal, shutting down...")
+    # Подключаем роутеры
+    dp.include_router(basic_router)
+    dp.include_router(craft_router)
 
+    # Регистрируем middleware для сессий БД
+    db_middleware = DbSessionMiddleware(session_maker)
+    dp.message.middleware(db_middleware)
+    dp.callback_query.middleware(db_middleware)
