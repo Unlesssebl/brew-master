@@ -1,6 +1,7 @@
 from typing import Optional
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from src.core.config import GameBalance as GameBalanceModel
 
 
 class Settings(BaseSettings):
@@ -12,6 +13,9 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@db:5432/beer_empire"
     LLM_API_KEY: Optional[str] = None
     LOG_LEVEL: str = "INFO"
+    GameBalance: GameBalanceModel = GameBalanceModel()
+
+
 
     model_config = SettingsConfigDict(
         env_file=".env",
