@@ -30,6 +30,8 @@ services:
         condition: service_healthy
     env_file:
       - .env
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-beer_empire}
     ports:
       - "8000:8000"
 
