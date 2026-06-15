@@ -1,24 +1,31 @@
 import asyncio
 import logging
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 logger = logging.getLogger(__name__)
 
 
-async def run_rival_ceos():
+async def run_rival_ceo_worker(session_maker: async_sessionmaker) -> None:
     """
-    Фоновый процесс симуляции действий ИИ-конкурентов (Rival CEOs) на рынке.
-    Скрипт читает рыночные данные и обращается к llm_engine/generator.py.
+    Асинхронный воркер для симуляции действий ИИ-конкурентов (Rival CEO).
+    Запускается раз в 12 часов, анализирует перенасыщение рынка,
+    вызывает LLM для принятия решений конкурентами и применяет рыночные штрафы.
     """
-    logger.info("Starting Rival CEOs simulation worker...")
+    logger.info("Rival CEO worker started.")
     while True:
         try:
-            # 1. Агрегация рынка (самые продаваемые рецепты)
-            # 2. Вызов LLM генератора для определения действия (напр., демпинг)
-            # 3. Применение штрафа (D_penalty) к рынку
-            await asyncio.sleep(43200)  # Раз в 12 часов
-        except asyncio.CancelledError:
-            logger.info("Rival CEOs worker shutting down...")
-            break
+            logger.info("Rival CEO iteration started")
+
+            # TODO: Реализовать логику симуляции Rival CEO:
+            # 1. Агрегация продаж из economy.market_saturation
+            # 2. Вызов LLM для принятия решения ИИ-конкурентом
+            # 3. Применение штрафа за перенасыщение к целевому рынку:
+            #    D_penalty = e^(-λ * max(0, V_sold - Threshold))
+
         except Exception as e:
-            logger.error(f"Error in rival CEOs loop: {e}", exc_info=True)
-            await asyncio.sleep(60)
+            logger.error(
+                f"Error during Rival CEO worker execution: {e}", exc_info=True
+            )
+
+        # Спим 12 часов (43200 секунд)
+        await asyncio.sleep(43200)

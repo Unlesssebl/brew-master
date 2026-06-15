@@ -8,6 +8,7 @@ from .exceptions import (
 from .player_dal import PlayerDAL
 from .crafting_dal import CraftingDAL
 from .queue_dal import QueueDAL
+from .economy_dal import EconomyDAL
 
 __all__ = [
     "DALError",
@@ -18,4 +19,6 @@ __all__ = [
     "PlayerDAL",
     "CraftingDAL",
     "QueueDAL",
+    "EconomyDAL",
 ]
+

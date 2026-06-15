@@ -6,11 +6,13 @@ from src.database.dal import (
     PlayerDAL,
     CraftingDAL,
     QueueDAL,
+    EconomyDAL,
     InsufficientFundsError,
     PlayerNotFoundError,
     TaskNotFoundError,
 )
-from src.database.models import Player, Recipe, Task
+from src.database.models import Player, Recipe, Task, Patent, TransactionLog
+
 
 
 @pytest.mark.asyncio
@@ -162,3 +164,63 @@ async def test_queue_dal_complete_task_not_found():
     
     with pytest.raises(TaskNotFoundError):
         await QueueDAL.complete_task(session, 10, success=True)
+
+
+@pytest.mark.asyncio
+async def test_queue_dal_create_task():
+    session = AsyncMock()
+    session.add = MagicMock()
+    session.flush = AsyncMock()
+
+    task = await QueueDAL.create_task(
+        session=session,
+        task_type="bot_dispatch",
+        payload={"foo": "bar"},
+        target_tg_id=12345
+    )
+
+    assert isinstance(task, Task)
+    assert task.task_type == "bot_dispatch"
+    assert task.payload == {"foo": "bar", "tg_id": 12345}
+    session.add.assert_called_once_with(task)
+    session.flush.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_economy_dal_get_unprocessed_royalties():
+    session = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.all.return_value = [
+        (1, Decimal("100.50")),
+        (2, Decimal("200.00"))
+    ]
+    session.execute.return_value = mock_result
+
+    res = await EconomyDAL.get_unprocessed_royalties(session)
+    assert len(res) == 2
+    assert res[0] == {"recipe_id": 1, "total_revenue": 100.50}
+    assert res[1] == {"recipe_id": 2, "total_revenue": 200.0}
+
+
+@pytest.mark.asyncio
+async def test_economy_dal_mark_transactions_processed():
+    session = AsyncMock()
+    await EconomyDAL.mark_transactions_processed(session, [1, 2])
+    session.execute.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_economy_dal_get_active_patents_for_recipes():
+    session = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.all.return_value = [
+        (10, 100, Decimal("50.00")),
+        (11, 101, Decimal("0.00"))
+    ]
+    session.execute.return_value = mock_result
+
+    res = await EconomyDAL.get_active_patents_for_recipes(session, [1, 2])
+    assert len(res) == 2
+    assert res[0] == {"patent_id": 10, "player_id": 100, "royalty_earned_24h": 50.0}
+    assert res[1] == {"patent_id": 11, "player_id": 101, "royalty_earned_24h": 0.0}
+

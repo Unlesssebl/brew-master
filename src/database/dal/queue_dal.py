@@ -54,3 +54,27 @@ class QueueDAL:
 
         if result.rowcount == 0:
             raise TaskNotFoundError(f"Task with ID {task_id} not found.")
+
+    @staticmethod
+    async def create_task(
+        session: AsyncSession,
+        task_type: str,
+        payload: dict,
+        target_tg_id: int | None = None,
+    ) -> Task:
+        """
+        Создает новую задачу в очереди.
+        """
+        actual_payload = payload.copy()
+        if target_tg_id is not None:
+            actual_payload["tg_id"] = target_tg_id
+
+        task = Task(
+            task_type=task_type,
+            payload=actual_payload,
+            status="pending",
+        )
+        session.add(task)
+        await session.flush()
+        return task
+
