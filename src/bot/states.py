@@ -12,6 +12,15 @@ class BrewingStates(StatesGroup):
     choosing_yeast = State()
 
 
+class TutorialStates(StatesGroup):
+    """
+    Состояния обучения игрока.
+    """
+    first_brew = State()
+    first_collect = State()
+    first_sell = State()
+
+
 class ExpeditionStates(StatesGroup):
     """
     Состояния рогалик-экспедиций.

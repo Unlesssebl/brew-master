@@ -12,8 +12,9 @@ from src.database.dal import (
     PlayerNotFoundError,
 )
 from src.database.models import Player, Staff, StaffRole
+from src.bot.keyboards.inline import get_brewing_keyboard
 from src.bot.states import BrewingStates
-from .brewing import make_progress_bar, make_stat_bar, get_crafting_text, get_brewing_keyboard
+from .brewing import make_progress_bar, make_stat_bar, get_crafting_text
 
 craft_router = Router()
 

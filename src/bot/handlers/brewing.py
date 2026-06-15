@@ -7,8 +7,8 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 from aiogram.exceptions import TelegramBadRequest
 
+from src.bot.keyboards.inline import get_brewing_keyboard
 from src.bot.states import BrewingStates
-from src.bot.utils.keyboards import get_brewing_keyboard
 from src.database.dal import (
     CraftingDAL,
     InsufficientFundsError,
@@ -47,6 +47,7 @@ def get_crafting_text(malt: int, water: int, hop: int, yeast: int) -> str:
     text = (
         f"🍺 <b>Интерактивная варка пива</b>\n\n"
         f"Определите пропорции ингредиентов (сумма должна составлять ровно 100%):\n\n"
+        f"💡 Подсказка: можно отправить 4 числа в чат, например <code>50 30 10 10</code>.\n\n"
         f"🌾 <b>Солод:</b> {malt}%  <code>[{make_progress_bar(malt)}]</code>\n"
         f"💧 <b>Вода:</b> {water}%  <code>[{make_progress_bar(water)}]</code>\n"
         f"🌿 <b>Хмель:</b> {hop}%  <code>[{make_progress_bar(hop)}]</code>\n"
@@ -159,6 +160,48 @@ async def process_brew_invalid(callback: CallbackQuery, state: FSMContext) -> No
         f"⚠️ Сумма ингредиентов должна быть ровно 100%! Сейчас: {total}%",
         show_alert=True,
     )
+
+
+@brewing_router.callback_query(
+    BrewingStates.choosing_ingredients, F.data == "brew_action:reset"
+)
+async def process_brew_reset(callback: CallbackQuery, state: FSMContext) -> None:
+    """
+    Сбрасывает все ингредиенты в 0.
+    """
+    if not callback.message or not isinstance(callback.message, Message):
+        await callback.answer()
+        return
+
+    await state.update_data(malt=0, water=0, hop=0, yeast=0)
+    text = get_crafting_text(0, 0, 0, 0)
+    await callback.message.edit_text(
+        text,
+        parse_mode="HTML",
+        reply_markup=get_brewing_keyboard(0, 0, 0, 0),
+    )
+    await callback.answer("Чан пуст!")
+
+
+@brewing_router.callback_query(
+    BrewingStates.choosing_ingredients, F.data == "brew_action:preset_lager"
+)
+async def process_brew_preset(callback: CallbackQuery, state: FSMContext) -> None:
+    """
+    Заполняет чан по рецепту Лагера.
+    """
+    if not callback.message or not isinstance(callback.message, Message):
+        await callback.answer()
+        return
+
+    await state.update_data(malt=60, water=20, hop=15, yeast=5)
+    text = get_crafting_text(60, 20, 15, 5)
+    await callback.message.edit_text(
+        text,
+        parse_mode="HTML",
+        reply_markup=get_brewing_keyboard(60, 20, 15, 5),
+    )
+    await callback.answer("Рецепт загружен!")
 
 
 @brewing_router.callback_query(
@@ -276,6 +319,44 @@ async def process_brew_start(
     )
     await state.clear()
     await callback.answer("Пиво сварено!")
+
+
+@brewing_router.message(BrewingStates.choosing_ingredients, F.text)
+async def process_text_brew_input(message: Message, state: FSMContext) -> None:
+    """
+    Перехватывает текстовый ввод ингредиентов, например: "40 40 10 10".
+    """
+    if not message.text:
+        return
+
+    parts = message.text.split()
+    if len(parts) != 4:
+        await message.answer(
+            "⚠️ Пожалуйста, введите ровно 4 числа через пробел "
+            "(солод, вода, хмель, дрожжи).\n"
+            "Например: <code>40 40 10 10</code>",
+            parse_mode="HTML",
+        )
+        return
+
+    try:
+        m, w, h, y = map(int, parts)
+    except ValueError:
+        await message.answer("⚠️ Все значения должны быть числами!")
+        return
+
+    if m < 0 or w < 0 or h < 0 or y < 0:
+        await message.answer("⚠️ Значения не могут быть отрицательными.")
+        return
+
+    await state.update_data(malt=m, water=w, hop=h, yeast=y)
+
+    text = get_crafting_text(m, w, h, y)
+    await message.answer(
+        "✅ Пропорции приняты!\n\n" + text,
+        parse_mode="HTML",
+        reply_markup=get_brewing_keyboard(m, w, h, y),
+    )
 
 
 # Оставляем cmd_brew для ручного вызова через текст (совместимость с тестами)

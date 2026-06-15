@@ -8,8 +8,8 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.bot.keyboards.inline import get_event_choice_keyboard
 from src.bot.states import ExpeditionStates
-from src.bot.utils.keyboards import get_event_choice_keyboard
 from src.core.expeditions import (
     ExpeditionEventType,
     calculate_expedition_outcome,

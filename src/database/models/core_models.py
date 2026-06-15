@@ -14,6 +14,7 @@ from sqlalchemy import (
     SmallInteger,
     String,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import ENUM as PG_ENUM
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -68,6 +69,12 @@ class Player(Base):
         PG_ENUM(TavernTier, name="tavern_tier", schema="core"),
         nullable=False,
         default=TavernTier.garage,
+    )
+    tutorial_step: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
     )
     last_offline_calc_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

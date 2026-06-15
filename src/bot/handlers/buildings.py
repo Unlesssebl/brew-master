@@ -5,9 +5,9 @@ from aiogram.types import CallbackQuery, Message, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.bot.keyboards.inline import get_building_keyboard
 from src.database.dal import PlayerDAL, PlayerNotFoundError, InsufficientFundsError
 from src.database.models import TavernTier
-from src.bot.utils.keyboards import get_building_keyboard
 
 buildings_router = Router()
 

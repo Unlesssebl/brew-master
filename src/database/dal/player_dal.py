@@ -1,10 +1,10 @@
 from datetime import UTC
 from decimal import Decimal
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database.models import Player, Staff, StaffStatus, TavernTier, Resource
+from src.database.models import Batch, Player, Resource, Staff, StaffStatus, TavernTier
 
 from .exceptions import InsufficientFundsError, PlayerNotFoundError
 
@@ -52,6 +52,15 @@ class PlayerDAL:
         player = Player(tg_id=tg_id, gold=Decimal("1000.00"))
         self.session.add(player)
         await self.session.flush()
+        return player
+
+    async def update_tutorial_step(self, tg_id: int, new_step: int) -> Player:
+        """
+        Обновляет шаг обучения игрока.
+        """
+        player = await self.get_player(tg_id)
+        player.tutorial_step = new_step
+        await self.session.commit()
         return player
 
     async def get_active_staff(self, player_id: int, role: str) -> Staff | None:
@@ -188,6 +197,30 @@ class PlayerDAL:
         stmt = select(Staff).where(Staff.player_id == player_id)
         res = await self.session.execute(stmt)
         return list(res.scalars().all())
+
+    async def get_alerts_summary(self, player_id: int) -> dict[str, int]:
+        """
+        Собирает сводку важных уведомлений для игрока.
+        """
+        stmt_batches = select(func.count(Batch.batch_id)).where(
+            Batch.player_id == player_id,
+            Batch.quantity_barrels > 0,
+        )
+        batches_res = await self.session.execute(stmt_batches)
+        ready_batches = batches_res.scalar_one_or_none() or 0
+
+        stmt_staff = select(func.count(Staff.staff_id)).where(
+            Staff.player_id == player_id,
+            Staff.fatigue > 50,
+            Staff.status != StaffStatus.dead,
+        )
+        staff_res = await self.session.execute(stmt_staff)
+        tired_staff = staff_res.scalar_one_or_none() or 0
+
+        return {
+            "ready_batches": ready_batches,
+            "tired_staff": tired_staff,
+        }
 
     async def get_resources(self, player_id: int) -> dict[str, Decimal]:
         """
