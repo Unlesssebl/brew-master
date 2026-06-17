@@ -110,6 +110,17 @@ def get_event_choice_keyboard(choices: list[EventChoice]) -> InlineKeyboardMarku
     return builder.as_markup()
 
 
+def get_welcome_keyboard() -> InlineKeyboardMarkup:
+    """
+    Клавиатура для приветственного экрана.
+    """
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="🍺 Войти в таверну", callback_data="tutorial:start")
+    )
+    return builder.as_markup()
+
+
 def get_tutorial_start_keyboard() -> InlineKeyboardMarkup:
     """
     Клавиатура для первого шага онбординга.

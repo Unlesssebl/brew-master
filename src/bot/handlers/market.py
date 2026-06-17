@@ -437,6 +437,9 @@ async def process_sell_confirm(callback: CallbackQuery, session: AsyncSession) -
         # Продаем партию через DAL
         await economy_dal.sell_batch(session, cast(int, player.player_id), batch_id, faction, market_type, revenue)
 
+        if player.tutorial_step == 2:
+            await player_dal.update_tutorial_step(tg_id, 3)
+
         # Обновляем статы игрока (репутация, влияние)
         await player_dal.update_player_stats(
             player_id=cast(int, player.player_id),
