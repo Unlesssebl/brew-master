@@ -80,7 +80,6 @@ def get_brewing_keyboard(
         InlineKeyboardButton(text="🔄 Слить всё (0%)", callback_data="brew_action:reset"),
         InlineKeyboardButton(text="🍺 Базовый Лагер", callback_data="brew_action:preset_lager"),
     )
-    builder.row(InlineKeyboardButton(text="🔙 Назад в меню", callback_data="screen:menu"))
     return builder.as_markup()
 
 
@@ -130,3 +129,23 @@ def get_tutorial_start_keyboard() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="🔥 Сварить тестовый эль", callback_data="tutorial:brew")
     )
     return builder.as_markup()
+
+
+def add_global_navigation_footer(
+    keyboard: InlineKeyboardMarkup,
+    back_callback: str | None = None
+) -> InlineKeyboardMarkup:
+    """
+    Добавляет в инлайн-клавиатуру глобальный футер с кнопками [Назад] и [В меню].
+    Если back_callback не передан, то кнопка [Назад] опускается, и выводится только [🏠 В меню].
+    """
+    new_grid = [row.copy() for row in keyboard.inline_keyboard]
+    
+    footer_row = []
+    if back_callback:
+        footer_row.append(InlineKeyboardButton(text="🔙 Назад", callback_data=back_callback))
+    footer_row.append(InlineKeyboardButton(text="🏠 В меню", callback_data="screen:menu"))
+    
+    new_grid.append(footer_row)
+    return InlineKeyboardMarkup(inline_keyboard=new_grid)
+

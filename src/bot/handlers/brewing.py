@@ -8,7 +8,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 from aiogram.exceptions import TelegramBadRequest
 
-from src.bot.keyboards.inline import get_brewing_keyboard
+from src.bot.keyboards.inline import get_brewing_keyboard, add_global_navigation_footer
 from src.bot.states import BrewingStates, TutorialStates
 from src.database.dal import (
     CraftingDAL,
@@ -17,6 +17,7 @@ from src.database.dal import (
     PlayerNotFoundError,
 )
 from src.database.models import Batch
+from src.bot.utils.hud import send_or_edit_dashboard
 
 brewing_router = Router()
 
@@ -84,10 +85,13 @@ async def start_brewing_callback(
     await state.update_data(malt=25, water=25, hop=25, yeast=25)
 
     text = get_crafting_text(25, 25, 25, 25)
-    await callback.message.edit_text(
-        text,
-        parse_mode="HTML",
-        reply_markup=get_brewing_keyboard(25, 25, 25, 25),
+    player = await player_dal.get_player(tg_id)
+    await send_or_edit_dashboard(
+        bot=callback.bot,
+        player=player,
+        session=session,
+        text=text,
+        reply_markup=add_global_navigation_footer(get_brewing_keyboard(25, 25, 25, 25), back_callback="screen:brewery_hall")
     )
     await callback.answer()
 
@@ -95,7 +99,7 @@ async def start_brewing_callback(
 @brewing_router.callback_query(
     BrewingStates.choosing_ingredients, F.data.startswith("brew_mod:")
 )
-async def process_brew_mod(callback: CallbackQuery, state: FSMContext) -> None:
+async def process_brew_mod(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
     """
     Обработчик кнопок изменения пропорций ингредиентов.
     """
@@ -132,12 +136,15 @@ async def process_brew_mod(callback: CallbackQuery, state: FSMContext) -> None:
     y = int(new_data.get("yeast", 25))
 
     text = get_crafting_text(m, w, h, y)
+    player = await PlayerDAL(session).get_player(callback.from_user.id)
 
     try:
-        await callback.message.edit_text(
-            text,
-            parse_mode="HTML",
-            reply_markup=get_brewing_keyboard(m, w, h, y),
+        await send_or_edit_dashboard(
+            bot=callback.bot,
+            player=player,
+            session=session,
+            text=text,
+            reply_markup=add_global_navigation_footer(get_brewing_keyboard(m, w, h, y), back_callback="screen:brewery_hall")
         )
     except TelegramBadRequest:
         pass
@@ -230,7 +237,7 @@ async def process_tutorial_brew(
 @brewing_router.callback_query(
     BrewingStates.choosing_ingredients, F.data == "brew_action:reset"
 )
-async def process_brew_reset(callback: CallbackQuery, state: FSMContext) -> None:
+async def process_brew_reset(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
     """
     Сбрасывает все ингредиенты в 0.
     """
@@ -240,10 +247,13 @@ async def process_brew_reset(callback: CallbackQuery, state: FSMContext) -> None
 
     await state.update_data(malt=0, water=0, hop=0, yeast=0)
     text = get_crafting_text(0, 0, 0, 0)
-    await callback.message.edit_text(
-        text,
-        parse_mode="HTML",
-        reply_markup=get_brewing_keyboard(0, 0, 0, 0),
+    player = await PlayerDAL(session).get_player(callback.from_user.id)
+    await send_or_edit_dashboard(
+        bot=callback.bot,
+        player=player,
+        session=session,
+        text=text,
+        reply_markup=add_global_navigation_footer(get_brewing_keyboard(0, 0, 0, 0), back_callback="screen:brewery_hall")
     )
     await callback.answer("Чан пуст!")
 
@@ -251,7 +261,7 @@ async def process_brew_reset(callback: CallbackQuery, state: FSMContext) -> None
 @brewing_router.callback_query(
     BrewingStates.choosing_ingredients, F.data == "brew_action:preset_lager"
 )
-async def process_brew_preset(callback: CallbackQuery, state: FSMContext) -> None:
+async def process_brew_preset(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
     """
     Заполняет чан по рецепту Лагера.
     """
@@ -261,10 +271,13 @@ async def process_brew_preset(callback: CallbackQuery, state: FSMContext) -> Non
 
     await state.update_data(malt=60, water=20, hop=15, yeast=5)
     text = get_crafting_text(60, 20, 15, 5)
-    await callback.message.edit_text(
-        text,
-        parse_mode="HTML",
-        reply_markup=get_brewing_keyboard(60, 20, 15, 5),
+    player = await PlayerDAL(session).get_player(callback.from_user.id)
+    await send_or_edit_dashboard(
+        bot=callback.bot,
+        player=player,
+        session=session,
+        text=text,
+        reply_markup=add_global_navigation_footer(get_brewing_keyboard(60, 20, 15, 5), back_callback="screen:brewery_hall")
     )
     await callback.answer("Рецепт загружен!")
 
@@ -377,17 +390,20 @@ async def process_brew_start(
     )
 
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="🔙 Назад в меню", callback_data="screen:menu"))
 
-    await callback.message.edit_text(
-        text, parse_mode="HTML", reply_markup=builder.as_markup()
+    await send_or_edit_dashboard(
+        bot=callback.bot,
+        player=player,
+        session=session,
+        text=text,
+        reply_markup=add_global_navigation_footer(builder.as_markup(), back_callback="screen:brewery_hall")
     )
     await state.clear()
     await callback.answer("Пиво сварено!")
 
 
 @brewing_router.message(BrewingStates.choosing_ingredients, F.text)
-async def process_text_brew_input(message: Message, state: FSMContext) -> None:
+async def process_text_brew_input(message: Message, state: FSMContext, session: AsyncSession) -> None:
     """
     Перехватывает текстовый ввод ингредиентов, например: "40 40 10 10".
     """
@@ -417,10 +433,14 @@ async def process_text_brew_input(message: Message, state: FSMContext) -> None:
     await state.update_data(malt=m, water=w, hop=h, yeast=y)
 
     text = get_crafting_text(m, w, h, y)
-    await message.answer(
-        "✅ Пропорции приняты!\n\n" + text,
-        parse_mode="HTML",
-        reply_markup=get_brewing_keyboard(m, w, h, y),
+    player = await PlayerDAL(session).get_player(message.from_user.id)
+    await send_or_edit_dashboard(
+        bot=message.bot,
+        player=player,
+        session=session,
+        text="✅ Пропорции приняты!\n\n" + text,
+        reply_markup=add_global_navigation_footer(get_brewing_keyboard(m, w, h, y), back_callback="screen:brewery_hall"),
+        force_new=True
     )
 
 
@@ -450,7 +470,7 @@ async def cmd_brew(
         player_dal = PlayerDAL(session)
 
         try:
-            await player_dal.get_player(tg_id)
+            player = await player_dal.get_player(tg_id)
         except PlayerNotFoundError:
             await message.answer("⚠️ Вы не зарегистрированы. Напишите /start")
             return
@@ -459,10 +479,13 @@ async def cmd_brew(
         await state.update_data(malt=25, water=25, hop=25, yeast=25)
 
         text = get_crafting_text(25, 25, 25, 25)
-        await message.answer(
-            text,
-            parse_mode="HTML",
-            reply_markup=get_brewing_keyboard(25, 25, 25, 25),
+        await send_or_edit_dashboard(
+            bot=message.bot,
+            player=player,
+            session=session,
+            text=text,
+            reply_markup=add_global_navigation_footer(get_brewing_keyboard(25, 25, 25, 25), back_callback="screen:brewery_hall"),
+            force_new=True
         )
         return
 
@@ -530,4 +553,13 @@ async def cmd_brew(
         f"👃 Аромат: <b>{recipe.aroma:.2f} pts</b>\n"
         f"🛡️ Стабильность: <b>{int(recipe.stability)}/100</b>\n"
     )
-    await message.answer(text, parse_mode="HTML")
+    
+    builder = InlineKeyboardBuilder()
+    await send_or_edit_dashboard(
+        bot=message.bot,
+        player=player,
+        session=session,
+        text=text,
+        reply_markup=add_global_navigation_footer(builder.as_markup(), back_callback="screen:brewery_hall"),
+        force_new=True
+    )

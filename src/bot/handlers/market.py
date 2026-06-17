@@ -10,8 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.dal import PlayerDAL, PlayerNotFoundError, EconomyDAL, InsufficientFundsError
 from src.database.models import Batch, Recipe, IngredientPrice, PlayerEventLog
-from src.bot.utils.hud import update_hud
+from src.bot.utils.hud import send_or_edit_dashboard
 from src.bot.utils.formatters import get_tavern_name
+from src.bot.keyboards.inline import add_global_navigation_footer
 
 logger = logging.getLogger(__name__)
 market_router = Router()
@@ -47,16 +48,14 @@ async def show_market(callback: CallbackQuery, session: AsyncSession) -> None:
         builder.row(
             InlineKeyboardButton(text="💰 Сбыть партию готового пива", callback_data="market:sell_list")
         )
-        builder.row(
-            InlineKeyboardButton(text="🔙 Вернуться в город", callback_data="screen:menu")
-        )
 
-        await callback.message.edit_text(
-            text, parse_mode="HTML", reply_markup=builder.as_markup()
+        await send_or_edit_dashboard(
+            bot=callback.bot,
+            player=player,
+            session=session,
+            text=text,
+            reply_markup=add_global_navigation_footer(builder.as_markup())
         )
-
-        # Обновляем HUD
-        await update_hud(callback.bot, player, session)
 
     except PlayerNotFoundError:
         await callback.answer("Профиль не найден.", show_alert=True)
@@ -115,12 +114,12 @@ async def show_buy_list(callback: CallbackQuery, session: AsyncSession) -> None:
                 )
             )
 
-        builder.row(
-            InlineKeyboardButton(text="🔙 Назад на площадь", callback_data="screen:market")
-        )
-
-        await callback.message.edit_text(
-            text, parse_mode="HTML", reply_markup=builder.as_markup()
+        await send_or_edit_dashboard(
+            bot=callback.bot,
+            player=player,
+            session=session,
+            text=text,
+            reply_markup=add_global_navigation_footer(builder.as_markup(), back_callback="screen:market")
         )
     except PlayerNotFoundError:
         await callback.answer("Профиль не найден.", show_alert=True)
@@ -178,7 +177,7 @@ async def process_buy_ingredient(callback: CallbackQuery, session: AsyncSession)
         await callback.answer(f"📦 Куплено: {amount} ед. ({cost:.1f} gold)!", show_alert=True)
         
         # Обновляем HUD и перерисовываем закупку
-        await update_hud(callback.bot, player, session)
+        # Так как это коллбек покупки, мы обновляем дашборд. Нам не нужен update_hud отдельно.
         await show_buy_list(callback, session)
 
     except PlayerNotFoundError:
@@ -247,12 +246,12 @@ async def show_sell_list(callback: CallbackQuery, session: AsyncSession) -> None
         else:
             text += "В вашем погребе пока нет готового к продаже пива. Сварите партию в варочном зале!\n"
 
-        builder.row(
-            InlineKeyboardButton(text="🔙 Назад на площадь", callback_data="screen:market")
-        )
-
-        await callback.message.edit_text(
-            text, parse_mode="HTML", reply_markup=builder.as_markup()
+        await send_or_edit_dashboard(
+            bot=callback.bot,
+            player=player,
+            session=session,
+            text=text,
+            reply_markup=add_global_navigation_footer(builder.as_markup(), back_callback="screen:market")
         )
     except PlayerNotFoundError:
         await callback.answer("Профиль не найден.", show_alert=True)
@@ -360,12 +359,12 @@ async def show_faction_choice(callback: CallbackQuery, session: AsyncSession) ->
                 callback_data=f"market:sell_confirm:{batch.batch_id}:goblins:{goblins_revenue:.2f}"
             )
         )
-        builder.row(
-            InlineKeyboardButton(text="🔙 Назад к списку", callback_data="market:sell_list")
-        )
-
-        await callback.message.edit_text(
-            text, parse_mode="HTML", reply_markup=builder.as_markup()
+        await send_or_edit_dashboard(
+            bot=callback.bot,
+            player=player,
+            session=session,
+            text=text,
+            reply_markup=add_global_navigation_footer(builder.as_markup(), back_callback="market:sell_list")
         )
     except PlayerNotFoundError:
         await callback.answer("Профиль не найден.", show_alert=True)
@@ -467,7 +466,6 @@ async def process_sell_confirm(callback: CallbackQuery, session: AsyncSession) -
         await callback.answer(f"💰 Партия продана за {revenue:.1f} gold!", show_alert=True)
         
         # Обновляем HUD и возвращаемся в список
-        await update_hud(callback.bot, player, session)
         await show_sell_list(callback, session)
 
     except PlayerNotFoundError:

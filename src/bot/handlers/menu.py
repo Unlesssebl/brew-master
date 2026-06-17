@@ -8,10 +8,10 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.bot.keyboards.inline import get_main_menu_keyboard
+from src.bot.keyboards.inline import get_main_menu_keyboard, add_global_navigation_footer
 from src.bot.states import TutorialStates
 from src.bot.utils.formatters import get_reputation_title, get_tavern_name
-from src.bot.utils.hud import update_hud
+from src.bot.utils.hud import send_or_edit_dashboard
 from src.database.dal import PlayerDAL, PlayerNotFoundError
 from src.database.models import Staff, Batch, Patent, Recipe, TransactionLog
 
@@ -47,12 +47,13 @@ async def show_menu_callback(callback: CallbackQuery, session: AsyncSession, sta
         )
         
         alerts = await player_dal.get_alerts_summary(cast(int, player.player_id))
-        await callback.message.edit_text(
-            text, parse_mode="HTML", reply_markup=get_main_menu_keyboard(alerts)
+        await send_or_edit_dashboard(
+            bot=callback.bot,
+            player=player,
+            session=session,
+            text=text,
+            reply_markup=get_main_menu_keyboard(alerts)
         )
-        
-        # Обновляем HUD
-        await update_hud(callback.bot, player, session)
         
     except PlayerNotFoundError:
         await callback.answer("Профиль не найден. Напишите /start", show_alert=True)
@@ -137,18 +138,20 @@ async def show_inventory(callback: CallbackQuery, session: AsyncSession) -> None
         else:
             text += "🍺 На складе пока нет готового пива.\n"
 
-        builder.row(
-            InlineKeyboardButton(
-                text="🔙 Вернуться в город", callback_data="screen:menu"
-            )
-        )
+        # Если предыдущее сообщение было фото (например, при просмотре патента),
+        # мы должны принудительно отправить новое текстовое сообщение
+        force_new = False
+        if callback.message and (callback.message.photo or callback.message.document):
+            force_new = True
 
-        await callback.message.edit_text(
-            text, parse_mode="HTML", reply_markup=builder.as_markup()
+        await send_or_edit_dashboard(
+            bot=callback.bot,
+            player=player,
+            session=session,
+            text=text,
+            reply_markup=add_global_navigation_footer(builder.as_markup()),
+            force_new=force_new
         )
-        
-        # Обновляем HUD
-        await update_hud(callback.bot, player, session)
         
     except PlayerNotFoundError:
         await callback.answer("Профиль не найден. Напишите /start", show_alert=True)
@@ -174,6 +177,49 @@ async def collect_ready_batches_callback(
         player = await player_dal.get_player(tg_id)
         result = await player_dal.collect_ready_batches(cast(int, player.player_id))
         if result["batches"] == 0:
+            if player.tutorial_step == 1:
+                # Проверим, есть ли вообще партии у игрока в базе
+                stmt = select(func.count(Batch.batch_id)).where(Batch.player_id == cast(int, player.player_id))
+                res_count = await session.execute(stmt)
+                total_batches = res_count.scalar_one_or_none() or 0
+                
+                if total_batches > 0:
+                    # Игрок уже собрал пиво ранее. Переводим на шаг 2.
+                    await player_dal.update_tutorial_step(tg_id, 2)
+                    await state.set_state(TutorialStates.first_sell)
+                    builder = InlineKeyboardBuilder()
+                    builder.row(InlineKeyboardButton(text="⚖️ Торговая площадь", callback_data="screen:market"))
+                    await send_or_edit_dashboard(
+                        bot=callback.bot,
+                        player=player,
+                        session=session,
+                        text="🏺 <b>Пиво на складе!</b>\n\n"
+                             "Пора выходить на рынок. Отправляйся на Торговую площадь.",
+                        reply_markup=builder.as_markup()
+                    )
+                    await callback.answer("Пиво уже собрано!")
+                    return
+                else:
+                    # Партий вообще нет. Сбрасываем обучение на шаг 0, чтобы игрок мог сварить заново.
+                    await player_dal.update_tutorial_step(tg_id, 0)
+                    await state.clear()
+                    try:
+                        await callback.message.delete()
+                    except Exception:
+                        pass
+                    if player.hud_message_id:
+                        player.hud_message_id = None
+                        session.add(player)
+                        await session.flush()
+                    await callback.bot.send_message(
+                        chat_id=callback.message.chat.id,
+                        text="📜 <b>Обучение сброшено!</b>\n\n"
+                             "Кажется, ваша первая варка была утеряна. Напишите /start, чтобы начать обучение заново.",
+                        parse_mode="HTML"
+                    )
+                    await callback.answer("Обучение сброшено!")
+                    return
+
             await callback.answer("Готовых партий для сбора нет.", show_alert=True)
             return
 
@@ -183,19 +229,17 @@ async def collect_ready_batches_callback(
 
         builder = InlineKeyboardBuilder()
         builder.row(InlineKeyboardButton(text="🏺 Открыть погреб", callback_data="screen:inventory"))
-        builder.row(InlineKeyboardButton(text="🔙 Вернуться в город", callback_data="screen:menu"))
 
-        await callback.message.edit_text(
-            f"🟢 <b>Пиво собрано!</b>\n\n"
-            f"В погреб перенесено партий: <code>{result['batches']}</code>\n"
-            f"Всего бочек: <code>{result['barrels']}</code>",
-            parse_mode="HTML",
-            reply_markup=builder.as_markup(),
+        await send_or_edit_dashboard(
+            bot=callback.bot,
+            player=player,
+            session=session,
+            text=f"🟢 <b>Пиво собрано!</b>\n\n"
+                 f"В погреб перенесено партий: <code>{result['batches']}</code>\n"
+                 f"Всего бочек: <code>{result['barrels']}</code>",
+            reply_markup=add_global_navigation_footer(builder.as_markup()),
         )
         await callback.answer("Пиво собрано!")
-        
-        # Обновляем HUD
-        await update_hud(callback.bot, player, session)
         
     except PlayerNotFoundError:
         await callback.answer("Профиль не найден. Напишите /start", show_alert=True)
@@ -280,14 +324,14 @@ async def show_chronicle(callback: CallbackQuery, session: AsyncSession) -> None
         )
 
         builder = InlineKeyboardBuilder()
-        builder.row(InlineKeyboardButton(text="🔙 Вернуться в город", callback_data="screen:menu"))
 
-        await callback.message.edit_text(
-            text, parse_mode="HTML", reply_markup=builder.as_markup()
+        await send_or_edit_dashboard(
+            bot=callback.bot,
+            player=player,
+            session=session,
+            text=text,
+            reply_markup=add_global_navigation_footer(builder.as_markup()),
         )
-        
-        # Обновляем HUD
-        await update_hud(callback.bot, player, session)
         
     except PlayerNotFoundError:
         await callback.answer("Профиль не найден.", show_alert=True)
@@ -349,24 +393,36 @@ async def examine_patent_callback(callback: CallbackQuery, session: AsyncSession
 
     if patent.card_image_file_id:
         try:
-            await callback.message.answer_photo(
+            new_msg = await callback.message.answer_photo(
                 photo=cast(str, patent.card_image_file_id),
                 caption=caption,
                 parse_mode="HTML",
                 reply_markup=builder.as_markup()
             )
-            await callback.message.delete()
+            try:
+                await callback.message.delete()
+            except Exception:
+                pass
+            player.hud_message_id = new_msg.message_id
+            session.add(player)
+            await session.flush()
         except Exception:
-            # Если отправка фото не сработала, отправим текстом
-            await callback.message.edit_text(
-                caption,
-                parse_mode="HTML",
+            # Если отправка фото не сработала, обновим текстом в дашборде
+            player = await PlayerDAL(session).get_player(callback.from_user.id)
+            await send_or_edit_dashboard(
+                bot=callback.bot,
+                player=player,
+                session=session,
+                text=caption,
                 reply_markup=builder.as_markup()
             )
     else:
-        await callback.message.edit_text(
-            caption,
-            parse_mode="HTML",
+        player = await PlayerDAL(session).get_player(callback.from_user.id)
+        await send_or_edit_dashboard(
+            bot=callback.bot,
+            player=player,
+            session=session,
+            text=caption,
             reply_markup=builder.as_markup()
         )
 
@@ -436,18 +492,14 @@ async def show_staff(callback: CallbackQuery, session: AsyncSession) -> None:
                 text="🤝 Нанять сотрудника (300 gold)", callback_data="staff:recruit"
             )
         )
-        builder.row(
-            InlineKeyboardButton(
-                text="🔙 Назад в таверну", callback_data="screen:tavern"
-            )
-        )
 
-        await callback.message.edit_text(
-            text, parse_mode="HTML", reply_markup=builder.as_markup()
+        await send_or_edit_dashboard(
+            bot=callback.bot,
+            player=player,
+            session=session,
+            text=text,
+            reply_markup=add_global_navigation_footer(builder.as_markup(), back_callback="screen:tavern"),
         )
-        
-        # Обновляем HUD
-        await update_hud(callback.bot, player, session)
         
     except PlayerNotFoundError:
         await callback.answer("Профиль не найден. Напишите /start", show_alert=True)

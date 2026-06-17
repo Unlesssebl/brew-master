@@ -12,8 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.database.dal import PlayerDAL, CraftingDAL, InsufficientFundsError, PlayerNotFoundError
 from src.database.models import Recipe, Batch, Patent
 from src.database.connection import async_session_factory
-from src.bot.utils.hud import update_hud
+from src.bot.utils.hud import send_or_edit_dashboard
 from src.bot.utils.formatters import get_tavern_name
+from src.bot.keyboards.inline import add_global_navigation_footer
 from src.llm_engine.generator import LLMPatentLoreGenerator
 from src.llm_engine.api_client import generate_patent_image
 
@@ -56,16 +57,14 @@ async def show_brewery_hall(callback: CallbackQuery, session: AsyncSession) -> N
         builder.row(
             InlineKeyboardButton(text="📜 Патентное бюро", callback_data="brewery_hall:patent_bureau")
         )
-        builder.row(
-            InlineKeyboardButton(text="🔙 Вернуться в город", callback_data="screen:menu")
-        )
 
-        await callback.message.edit_text(
-            text, parse_mode="HTML", reply_markup=builder.as_markup()
+        await send_or_edit_dashboard(
+            bot=callback.bot,
+            player=player,
+            session=session,
+            text=text,
+            reply_markup=add_global_navigation_footer(builder.as_markup())
         )
-
-        # Обновляем HUD
-        await update_hud(callback.bot, player, session)
 
     except PlayerNotFoundError:
         await callback.answer("Профиль не найден.", show_alert=True)
@@ -114,12 +113,12 @@ async def show_serial_list(callback: CallbackQuery, session: AsyncSession) -> No
         else:
             text += "У вас пока нет сохраненных рецептов. Сварите пиво в экспериментальном режиме!\n"
 
-        builder.row(
-            InlineKeyboardButton(text="🔙 Назад в зал", callback_data="screen:brewery_hall")
-        )
-
-        await callback.message.edit_text(
-            text, parse_mode="HTML", reply_markup=builder.as_markup()
+        await send_or_edit_dashboard(
+            bot=callback.bot,
+            player=player,
+            session=session,
+            text=text,
+            reply_markup=add_global_navigation_footer(builder.as_markup(), back_callback="screen:brewery_hall")
         )
     except PlayerNotFoundError:
         await callback.answer("Профиль не найден.", show_alert=True)
@@ -234,23 +233,18 @@ async def process_serial_brew(callback: CallbackQuery, session: AsyncSession) ->
             metadata={"recipe_id": recipe.recipe_id, "title": recipe.title}
         )
 
-        builder = InlineKeyboardBuilder()
-        builder.row(InlineKeyboardButton(text="🏺 В погреб", callback_data="screen:inventory"))
-        builder.row(InlineKeyboardButton(text="🔙 В варочный зал", callback_data="screen:brewery_hall"))
-
-        await callback.message.edit_text(
-            f"🟢 <b>Партия запущена!</b>\n\n"
-            f"Пиво: <b>«{html.quote(cast(str, recipe.title))}»</b> (10 бочек)\n"
-            f"Качество партии: <code>{quality_mod:.2f}x</code>\n"
-            f"{staff_info}\n"
-            f"{debuff_alert}\n"
-            f"⏳ Партия будет готова к сбору через 2 минуты.",
-            parse_mode="HTML",
-            reply_markup=builder.as_markup()
+        await send_or_edit_dashboard(
+            bot=callback.bot,
+            player=player,
+            session=session,
+            text=f"🟢 <b>Партия запущена!</b>\n\n"
+                 f"Пиво: <b>«{html.quote(cast(str, recipe.title))}»</b> (10 бочек)\n"
+                 f"Качество партии: <code>{quality_mod:.2f}x</code>\n"
+                 f"{staff_info}\n"
+                 f"{debuff_alert}\n"
+                 f"⏳ Партия будет готова к сбору через 2 минуты.",
+            reply_markup=add_global_navigation_footer(builder.as_markup(), back_callback="screen:brewery_hall")
         )
-        
-        # Обновим HUD
-        await update_hud(callback.bot, player, session)
 
     except PlayerNotFoundError:
         await callback.answer("Профиль не найден.", show_alert=True)
@@ -330,12 +324,12 @@ async def show_patent_bureau(callback: CallbackQuery, session: AsyncSession) -> 
         else:
             text += "🔒 <i>У вас нет рецептов, удовлетворяющих условиям патентования (Крепость ≥ 8% и Аромат ≥ 7).</i>\n"
 
-        builder.row(
-            InlineKeyboardButton(text="🔙 Назад в зал", callback_data="screen:brewery_hall")
-        )
-
-        await callback.message.edit_text(
-            text, parse_mode="HTML", reply_markup=builder.as_markup()
+        await send_or_edit_dashboard(
+            bot=callback.bot,
+            player=player,
+            session=session,
+            text=text,
+            reply_markup=add_global_navigation_footer(builder.as_markup(), back_callback="screen:brewery_hall")
         )
     except PlayerNotFoundError:
         await callback.answer("Профиль не найден.", show_alert=True)
@@ -510,10 +504,6 @@ async def generate_patent_card_task(patent_id: int, chat_id: int, bot: Bot | Non
             )
             
             await session.commit()
-            
-            # Обновим HUD
-            player = await player_dal.get_player_by_id(cast(int, patent.player_id))
-            await update_hud(bot, player, session)
 
         except Exception as e:
             logger.error(f"Критическая ошибка в фоновой задаче патентования: {e}", exc_info=True)

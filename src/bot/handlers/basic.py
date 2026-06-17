@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.bot.keyboards.inline import get_main_menu_keyboard, get_tutorial_start_keyboard, get_welcome_keyboard
 from src.bot.states import TutorialStates
 from src.bot.utils.formatters import get_profile_text
+from src.bot.utils.hud import send_or_edit_dashboard
 from src.database.dal import PlayerDAL, PlayerNotFoundError
 
 basic_router = Router()
@@ -37,6 +38,7 @@ async def cmd_start(message: Message, session: AsyncSession, state: FSMContext |
             f"Вы унаследовали эту заброшенную таверну, и теперь ваша цель — вернуть ей былую славу, "
             f"стать величайшим мастером-пивоваром и покорить рынки всех фракций Города.</i>\n\n"
             f"Готов ли ты начать свой путь, {html.quote(message.from_user.full_name)}?",
+            parse_mode="HTML",
             reply_markup=get_welcome_keyboard(),
         )
         return
@@ -45,11 +47,15 @@ async def cmd_start(message: Message, session: AsyncSession, state: FSMContext |
             await state.set_state(TutorialStates.first_collect)
         builder = InlineKeyboardBuilder()
         builder.row(InlineKeyboardButton(text="🟢 Собрать пиво", callback_data="inventory:collect_ready"))
-        await message.answer(
-            "🔥 <b>Твоя первая варка завершена!</b>\n\n"
-            "Погреб наполняется ароматом свежего эля. "
-            "Следующий шаг — перелей пиво в бочки и спусти на склад.",
-            reply_markup=builder.as_markup()
+        await send_or_edit_dashboard(
+            bot=message.bot,
+            player=player,
+            session=session,
+            text="🔥 <b>Твоя первая варка завершена!</b>\n\n"
+                 "Погреб наполняется ароматом свежего эля. "
+                 "Следующий шаг — перелей пиво в бочки и спусти на склад.",
+            reply_markup=builder.as_markup(),
+            force_new=True,
         )
         return
     elif player.tutorial_step == 2:
@@ -57,11 +63,15 @@ async def cmd_start(message: Message, session: AsyncSession, state: FSMContext |
             await state.set_state(TutorialStates.first_sell)
         builder = InlineKeyboardBuilder()
         builder.row(InlineKeyboardButton(text="⚖️ Торговая площадь", callback_data="screen:market"))
-        await message.answer(
-            "🏺 <b>Пиво на складе!</b>\n\n"
-            "Пора выходить на рынок. Отправляйся на Торговую площадь и продай свою первую партию фракциям, "
-            "чтобы заработать золото и репутацию.",
-            reply_markup=builder.as_markup()
+        await send_or_edit_dashboard(
+            bot=message.bot,
+            player=player,
+            session=session,
+            text="🏺 <b>Пиво на складе!</b>\n\n"
+                 "Пора выходить на рынок. Отправляйся на Торговую площадь и продай свою первую партию фракциям, "
+                 "чтобы заработать золото и репутацию.",
+            reply_markup=builder.as_markup(),
+            force_new=True,
         )
         return
 
@@ -75,7 +85,15 @@ async def cmd_start(message: Message, session: AsyncSession, state: FSMContext |
         alerts = await player_dal.get_alerts_summary(cast(int, player.player_id))
     except TypeError:
         alerts = {}
-    await message.answer(text, parse_mode="HTML", reply_markup=get_main_menu_keyboard(alerts))
+
+    await send_or_edit_dashboard(
+        bot=message.bot,
+        player=player,
+        session=session,
+        text=text,
+        reply_markup=get_main_menu_keyboard(alerts),
+        force_new=True,
+    )
 
 
 @basic_router.callback_query(F.data == "tutorial:start")
@@ -131,7 +149,14 @@ async def cmd_menu(message: Message, session: AsyncSession) -> None:
             alerts = await player_dal.get_alerts_summary(cast(int, player.player_id))
         except TypeError:
             alerts = {}
-        await message.answer(text, parse_mode="HTML", reply_markup=get_main_menu_keyboard(alerts))
+        await send_or_edit_dashboard(
+            bot=message.bot,
+            player=player,
+            session=session,
+            text=text,
+            reply_markup=get_main_menu_keyboard(alerts),
+            force_new=True,
+        )
     except PlayerNotFoundError:
         await message.answer(
             "Вы не зарегистрированы в игре. Напишите /start, чтобы начать приключение!",
@@ -157,7 +182,14 @@ async def cmd_profile(message: Message, session: AsyncSession) -> None:
             alerts = await player_dal.get_alerts_summary(cast(int, player.player_id))
         except TypeError:
             alerts = {}
-        await message.answer(text, parse_mode="HTML", reply_markup=get_main_menu_keyboard(alerts))
+        await send_or_edit_dashboard(
+            bot=message.bot,
+            player=player,
+            session=session,
+            text=text,
+            reply_markup=get_main_menu_keyboard(alerts),
+            force_new=True,
+        )
     except PlayerNotFoundError:
         await message.answer(
             "Вы не зарегистрированы в игре. Напишите /start, чтобы начать приключение!",

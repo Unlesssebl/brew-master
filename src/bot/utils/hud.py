@@ -1,14 +1,27 @@
+import logging
 from typing import cast
 from aiogram import Bot
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.types import InlineKeyboardMarkup
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.database.models import Player, Resource, Batch
 from src.database.dal import PlayerDAL
 
+logger = logging.getLogger(__name__)
 
-async def update_hud(bot: Bot | None, player: Player, session: AsyncSession) -> None:
+
+async def send_or_edit_dashboard(
+    bot: Bot | None,
+    player: Player,
+    session: AsyncSession,
+    text: str,
+    reply_markup: InlineKeyboardMarkup | None = None,
+    force_new: bool = False,
+    has_alerts: bool = False,
+) -> None:
     """
-    Обновляет закрепленное HUD-сообщение для игрока.
+    Отправляет новое или редактирует существующее сообщение дашборда с интегрированным HUD.
     """
     if bot is None:
         return
@@ -25,51 +38,56 @@ async def update_hud(bot: Bot | None, player: Player, session: AsyncSession) -> 
     active_brews = res_active.scalar_one_or_none() or 0
 
     reputation_sign = "+" if cast(int, player.reputation) >= 0 else ""
+    alert_sign = " 🔴" if has_alerts else ""
     
     hud_text = (
-        f"<b>⚜️ ИНФОРМАЦИОННАЯ ПАНЕЛЬ ПИВОВАРА ⚜️</b>\n"
-        f"<code>┌──────────────────────────────────────────┐</code>\n"
+        f"<blockquote expandable><b>⚜️ ИНФОРМАЦИОННАЯ ПАНЕЛЬ ПИВОВАРА{alert_sign} ⚜️</b>\n"
         f"💰 <b>{player.gold:.2f}g</b> | 💎 <b>{player.prestige_crystals}</b> | 👑 <b>{player.influence}</b> вл. | ⭐ <b>{reputation_sign}{player.reputation}</b> реп.\n"
         f"🌾 <b>{resources.get('malt', 0):.1f}</b> | 💧 <b>{resources.get('water', 0):.1f}</b> | 🌿 <b>{resources.get('hops', 0):.1f}</b> | 🍞 <b>{resources.get('yeast', 0):.1f}</b>\n"
-        f"⏳ <b>Активных варок в погребе:</b> <code>{active_brews}</code>\n"
-        f"<code>└──────────────────────────────────────────┘</code>"
+        f"⏳ <b>Активных варок в погребе:</b> <code>{active_brews}</code></blockquote>\n\n"
+        f"{text}"
     )
 
     chat_id = cast(int, player.tg_id)
     
+    if force_new and player.hud_message_id:
+        try:
+            await bot.delete_message(chat_id=chat_id, message_id=cast(int, player.hud_message_id))
+        except Exception as e:
+            logger.debug(f"Failed to delete message: {e}")
+        player.hud_message_id = None
+
     if player.hud_message_id:
         try:
-            # Пытаемся отредактировать существующее закрепленное сообщение
             await bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=cast(int, player.hud_message_id),
                 text=hud_text,
+                reply_markup=reply_markup,
                 parse_mode="HTML"
             )
             return
-        except Exception:
-            # Если сообщение было удалено или возникла другая ошибка, снимем ID
+        except TelegramBadRequest as e:
+            if "message is not modified" in str(e).lower():
+                return
+            logger.warning(f"TelegramBadRequest in edit_message_text: {e}")
+            # Если сообщение удалено пользователем или возникла другая ошибка API, сбросим ID
+            player.hud_message_id = None
+        except Exception as e:
+            logger.exception("Error editing dashboard message")
             player.hud_message_id = None
             
-    # Если сообщения нет, отправляем новое, закрепляем и сохраняем ID
+    # Если сообщения нет или принудительно создаем новое
     try:
         new_msg = await bot.send_message(
             chat_id=chat_id,
             text=hud_text,
-            parse_mode="HTML",
-            disable_notification=True
+            reply_markup=reply_markup,
+            parse_mode="HTML"
         )
         player.hud_message_id = new_msg.message_id
-        # Пытаемся закрепить
-        try:
-            await bot.pin_chat_message(
-                chat_id=chat_id,
-                message_id=new_msg.message_id,
-                disable_notification=True
-            )
-        except Exception:
-            pass
         session.add(player)
         await session.flush()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.exception("Error sending new dashboard message")
+

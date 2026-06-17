@@ -32,7 +32,7 @@ CREATE TABLE core.players (
     reputation SMALLINT NOT NULL DEFAULT 0 CONSTRAINT chk_player_reputation CHECK (reputation BETWEEN -100 AND 100),
     influence SMALLINT NOT NULL DEFAULT 0 CONSTRAINT chk_player_influence CHECK (influence BETWEEN 0 AND 100),
     tavern_level core.tavern_tier NOT NULL DEFAULT 'garage',
-    hud_message_id BIGINT DEFAULT NULL, -- ID закрепленного HUD-сообщения в Telegram
+    hud_message_id BIGINT DEFAULT NULL, -- ID активного сообщения дашборда (SPA) в Telegram
     
     last_offline_calc_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()

@@ -8,7 +8,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.bot.keyboards.inline import get_event_choice_keyboard
+from src.bot.keyboards.inline import get_event_choice_keyboard, add_global_navigation_footer
 from src.bot.states import ExpeditionStates
 from src.core.expeditions import (
     ExpeditionEventType,
@@ -19,13 +19,15 @@ from src.database.dal import PlayerDAL, PlayerNotFoundError
 from src.database.models import Staff, StaffStatus, StaffRole
 from src.llm_engine import LLMEventGenerator
 from src.llm_engine.schemas import EventChoice, GameEvent
-from src.bot.utils.hud import update_hud
+from src.bot.utils.hud import send_or_edit_dashboard
 
 events_router = Router()
 
 
 @events_router.callback_query(F.data == "screen:expeditions")
-async def show_expeditions_screen(callback: CallbackQuery, state: FSMContext) -> None:
+async def show_expeditions_screen(
+    callback: CallbackQuery, state: FSMContext, session: AsyncSession
+) -> None:
     """
     Экран экспедиций и LLM-событий (Ворота).
     """
@@ -52,14 +54,16 @@ async def show_expeditions_screen(callback: CallbackQuery, state: FSMContext) ->
             text="🎭 Случайное событие (LLM)", callback_data="event:trigger"
         )
     )
-    builder.row(
-        InlineKeyboardButton(
-            text="🔙 Вернуться в город", callback_data="screen:menu"
-        )
-    )
 
-    await callback.message.edit_text(
-        text, parse_mode="HTML", reply_markup=builder.as_markup()
+    player_dal = PlayerDAL(session)
+    player = await player_dal.get_player(callback.from_user.id)
+
+    await send_or_edit_dashboard(
+        bot=callback.bot,
+        player=player,
+        session=session,
+        text=text,
+        reply_markup=add_global_navigation_footer(builder.as_markup())
     )
     await callback.answer()
 
@@ -136,12 +140,12 @@ async def start_expedition_setup(
                 status_desc = "устал (100%)" if s.fatigue >= 100 else "в походе"
                 text += f"• {s.name} ({role_ru}) — {status_desc}\n"
 
-        builder.row(
-            InlineKeyboardButton(text="🔙 К воротам", callback_data="screen:expeditions")
-        )
-
-        await callback.message.edit_text(
-            text, parse_mode="HTML", reply_markup=builder.as_markup()
+        await send_or_edit_dashboard(
+            bot=callback.bot,
+            player=player,
+            session=session,
+            text=text,
+            reply_markup=add_global_navigation_footer(builder.as_markup(), back_callback="screen:expeditions")
         )
 
     except PlayerNotFoundError:
@@ -222,14 +226,14 @@ async def run_expedition(
             )
 
             builder = InlineKeyboardBuilder()
-            builder.row(InlineKeyboardButton(text="🔙 К воротам", callback_data="screen:expeditions"))
 
-            await callback.message.edit_text(
-                text, parse_mode="HTML", reply_markup=builder.as_markup()
+            await send_or_edit_dashboard(
+                bot=callback.bot,
+                player=player,
+                session=session,
+                text=text,
+                reply_markup=add_global_navigation_footer(builder.as_markup(), back_callback="screen:expeditions")
             )
-            
-            # Обновим HUD
-            await update_hud(callback.bot, player, session)
             await callback.answer("Караван отправлен!")
             return
 
@@ -316,8 +320,12 @@ async def run_expedition(
                 )
             )
 
-        await callback.message.edit_text(
-            text, parse_mode="HTML", reply_markup=builder.as_markup()
+        await send_or_edit_dashboard(
+            bot=callback.bot,
+            player=player,
+            session=session,
+            text=text,
+            reply_markup=builder.as_markup()
         )
 
     except PlayerNotFoundError:
@@ -487,16 +495,14 @@ async def handle_expedition_choice(
         )
 
         builder = InlineKeyboardBuilder()
-        builder.row(
-            InlineKeyboardButton(text="🔙 Назад в меню", callback_data="screen:menu")
-        )
 
-        await callback.message.edit_text(
-            text, parse_mode="HTML", reply_markup=builder.as_markup()
+        await send_or_edit_dashboard(
+            bot=callback.bot,
+            player=player,
+            session=session,
+            text=text,
+            reply_markup=add_global_navigation_footer(builder.as_markup())
         )
-        
-        # Обновим HUD
-        await update_hud(callback.bot, player, session)
 
     except Exception as e:
         await callback.answer(f"Ошибка завершения экспедиции: {str(e)}", show_alert=True)

@@ -11,8 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.dal import PlayerDAL, PlayerNotFoundError, EconomyDAL, InsufficientFundsError
 from src.database.models import Batch, Recipe, Player, PlayerEventLog, TavernTier
-from src.bot.utils.hud import update_hud
+from src.bot.utils.hud import send_or_edit_dashboard
 from src.bot.utils.formatters import get_tavern_name
+from src.bot.keyboards.inline import add_global_navigation_footer
 
 logger = logging.getLogger(__name__)
 slums_router = Router()
@@ -48,16 +49,14 @@ async def show_slums(callback: CallbackQuery, session: AsyncSession) -> None:
         builder.row(
             InlineKeyboardButton(text="🗡️ Сеть осведомителей (PvP)", callback_data="slums:pvp_list")
         )
-        builder.row(
-            InlineKeyboardButton(text="🔙 Вернуться в город", callback_data="screen:menu")
-        )
 
-        await callback.message.edit_text(
-            text, parse_mode="HTML", reply_markup=builder.as_markup()
+        await send_or_edit_dashboard(
+            bot=callback.bot,
+            player=player,
+            session=session,
+            text=text,
+            reply_markup=add_global_navigation_footer(builder.as_markup())
         )
-
-        # Обновляем HUD
-        await update_hud(callback.bot, player, session)
 
     except PlayerNotFoundError:
         await callback.answer("Профиль не найден.", show_alert=True)
@@ -121,12 +120,12 @@ async def show_black_market(callback: CallbackQuery, session: AsyncSession) -> N
         if not has_junk:
             text += "<i>У вас нет бракованного пива в погребе. Гоблины не заинтересованы в качественном товаре!</i>\n"
 
-        builder.row(
-            InlineKeyboardButton(text="🔙 В переулок", callback_data="screen:slums")
-        )
-
-        await callback.message.edit_text(
-            text, parse_mode="HTML", reply_markup=builder.as_markup()
+        await send_or_edit_dashboard(
+            bot=callback.bot,
+            player=player,
+            session=session,
+            text=text,
+            reply_markup=add_global_navigation_footer(builder.as_markup(), back_callback="screen:slums")
         )
     except PlayerNotFoundError:
         await callback.answer("Профиль не найден.", show_alert=True)
@@ -190,7 +189,7 @@ async def process_black_sell(callback: CallbackQuery, session: AsyncSession) -> 
         await callback.answer("🍶 Гоблины забрали бочки, довольно ухмыляясь (+20 gold, -1 реп.)!", show_alert=True)
         
         # Обновляем HUD и перерисовываем базар
-        await update_hud(callback.bot, player, session)
+        # update_hud не требуется отдельно, так как его вызывает send_or_edit_dashboard
         await show_black_market(callback, session)
 
     except PlayerNotFoundError:
@@ -263,12 +262,12 @@ async def show_pvp_list(callback: CallbackQuery, session: AsyncSession) -> None:
         else:
             text += "<i>В данный момент конкурентов не обнаружено. Либо все боятся вашей репутации, либо город опустел...</i>\n"
 
-        builder.row(
-            InlineKeyboardButton(text="🔙 В переулок", callback_data="screen:slums")
-        )
-
-        await callback.message.edit_text(
-            text, parse_mode="HTML", reply_markup=builder.as_markup()
+        await send_or_edit_dashboard(
+            bot=callback.bot,
+            player=player,
+            session=session,
+            text=text,
+            reply_markup=add_global_navigation_footer(builder.as_markup(), back_callback="screen:slums")
         )
     except PlayerNotFoundError:
         await callback.answer("Профиль не найден.", show_alert=True)
@@ -437,12 +436,13 @@ async def process_pvp_action(callback: CallbackQuery, session: AsyncSession) -> 
                     f"Вы потеряли <b>{gold_cost:.0f} gold</b> и <b>{influence_cost} Влияния</b>."
                 )
 
-        await callback.message.edit_text(
-            text, parse_mode="HTML", reply_markup=builder.as_markup()
+        await send_or_edit_dashboard(
+            bot=callback.bot,
+            player=player,
+            session=session,
+            text=text,
+            reply_markup=add_global_navigation_footer(builder.as_markup(), back_callback="slums:pvp_list")
         )
-        
-        # Обновляем HUD
-        await update_hud(callback.bot, player, session)
 
     except PlayerNotFoundError:
         await callback.answer("Профиль не найден.", show_alert=True)

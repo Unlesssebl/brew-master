@@ -8,7 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.database.dal import PlayerDAL, PlayerNotFoundError, InsufficientFundsError
 from src.database.models import TavernTier
 from src.bot.utils.formatters import get_tavern_name
-from src.bot.utils.hud import update_hud
+from src.bot.utils.hud import send_or_edit_dashboard
+from src.bot.keyboards.inline import add_global_navigation_footer
 
 buildings_router = Router()
 
@@ -87,16 +88,13 @@ async def show_tavern(callback: CallbackQuery, session: AsyncSession) -> None:
         else:
             text += "🌟 Достигнут максимальный уровень улучшения!\n"
 
-        builder.row(
-            InlineKeyboardButton(text="🔙 Вернуться в город", callback_data="screen:menu")
+        await send_or_edit_dashboard(
+            bot=callback.bot,
+            player=player,
+            session=session,
+            text=text,
+            reply_markup=add_global_navigation_footer(builder.as_markup())
         )
-
-        await callback.message.edit_text(
-            text, parse_mode="HTML", reply_markup=builder.as_markup()
-        )
-
-        # Обновим HUD
-        await update_hud(callback.bot, player, session)
 
     except PlayerNotFoundError:
         await callback.answer("Профиль не найден.", show_alert=True)
