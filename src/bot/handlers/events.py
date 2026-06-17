@@ -16,9 +16,10 @@ from src.core.expeditions import (
     calculate_injury_consequences,
 )
 from src.database.dal import PlayerDAL, PlayerNotFoundError
-from src.database.models import Staff, StaffStatus
+from src.database.models import Staff, StaffStatus, StaffRole
 from src.llm_engine import LLMEventGenerator
 from src.llm_engine.schemas import EventChoice, GameEvent
+from src.bot.utils.hud import update_hud
 
 events_router = Router()
 
@@ -26,7 +27,7 @@ events_router = Router()
 @events_router.callback_query(F.data == "screen:expeditions")
 async def show_expeditions_screen(callback: CallbackQuery, state: FSMContext) -> None:
     """
-    Экран экспедиций и LLM-событий.
+    Экран экспедиций и LLM-событий (Ворота).
     """
     if not callback.message or not isinstance(callback.message, Message):
         await callback.answer()
@@ -34,16 +35,16 @@ async def show_expeditions_screen(callback: CallbackQuery, state: FSMContext) ->
 
     await state.clear()
     text = (
-        f"⛵ <b>Экспедиции и События королевства</b>\n\n"
-        f"Отправляйте ваших верных агентов в опасные путешествия за золотом и ресурсами, "
-        f"или поучаствуйте в уникальных событиях, сгенерированных Гейм-мастером!\n\n"
+        f"🗺️ <b>Городские ворота</b>\n\n"
+        f"Отсюда караваны отправляются в неизведанные земли. Вы можете направить своих караванщиков "
+        f"и торговцев в экспедиции за золотом, или довериться судьбе и активировать случайное событие королевства.\n\n"
         f"Выберите действие:"
     )
 
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(
-            text="⛵ Отправить в экспедицию", callback_data="expedition:start"
+            text="⛵ Подготовить экспедицию", callback_data="expedition:start"
         )
     )
     builder.row(
@@ -53,7 +54,7 @@ async def show_expeditions_screen(callback: CallbackQuery, state: FSMContext) ->
     )
     builder.row(
         InlineKeyboardButton(
-            text="🔙 Назад в меню", callback_data="screen:menu"
+            text="🔙 Вернуться в город", callback_data="screen:menu"
         )
     )
 
@@ -63,12 +64,12 @@ async def show_expeditions_screen(callback: CallbackQuery, state: FSMContext) ->
     await callback.answer()
 
 
-@events_router.callback_query(F.data == "event:trigger")
-async def trigger_llm_event(
-    callback: CallbackQuery, state: FSMContext, session: AsyncSession
+@events_router.callback_query(F.data == "expedition:start")
+async def start_expedition_setup(
+    callback: CallbackQuery, session: AsyncSession
 ) -> None:
     """
-    Запускает уникальное случайное LLM-событие.
+    Экран выбора агента для экспедиции.
     """
     if not callback.from_user or not callback.message or not isinstance(callback.message, Message):
         await callback.answer()
@@ -79,150 +80,171 @@ async def trigger_llm_event(
 
     try:
         player = await player_dal.get_player(tg_id)
-    except PlayerNotFoundError:
-        await callback.answer("Профиль не найден.", show_alert=True)
-        return
-
-    await callback.answer("🎭 Гейм-мастер генерирует событие...")
-
-    # Формируем состояние игрока для LLM
-    player_state = {
-        "tg_id": int(player.tg_id),
-        "gold": float(player.gold),
-        "reputation": int(player.reputation),
-        "influence": int(player.influence),
-        "tavern_level": str(player.tavern_level.value),
-    }
-
-    # Генерируем событие
-    llm_gen = LLMEventGenerator()
-    event = await llm_gen.generate_event(player_state)
-
-    # Сохраняем событие в стейте
-    await state.update_data(active_event=event.model_dump())
-    await state.set_state(ExpeditionStates.awaiting_choice)
-
-    text = (
-        f"📜 <b>{html.quote(event.event_title)}</b>\n\n"
-        f"{html.quote(event.event_description)}\n\n"
-        f"Сделайте ваш выбор:"
-    )
-
-    await callback.message.edit_text(
-        text,
-        parse_mode="HTML",
-        reply_markup=get_event_choice_keyboard(event.choices),
-    )
-
-
-@events_router.callback_query(ExpeditionStates.awaiting_choice, F.data.startswith("event:choice:"))
-async def handle_event_choice(
-    callback: CallbackQuery, state: FSMContext, session: AsyncSession
-) -> None:
-    """
-    Обрабатывает выбор игрока в LLM-событии.
-    """
-    if not callback.from_user or not callback.message or not isinstance(callback.message, Message) or not callback.data:
-        await callback.answer()
-        return
-
-    choice_id = callback.data.split(":")[2]
-    data = await state.get_data()
-    event_data = data.get("active_event")
-
-    if not event_data:
-        await callback.answer("Событие устарело или не найдено.", show_alert=True)
-        await state.clear()
-        return
-
-    event = GameEvent.model_validate(event_data)
-    # Ищем нужный выбор
-    choice = None
-    for c in event.choices:
-        if c.choice_id == choice_id:
-            choice = c
-            break
-
-    if not choice:
-        await callback.answer("Выбор не найден.", show_alert=True)
-        return
-
-    tg_id = callback.from_user.id
-    player_dal = PlayerDAL(session)
-
-    try:
-        player = await player_dal.get_player(tg_id)
-        # Применяем эффекты
-        await player_dal.update_player_stats(
-            int(player.player_id),
-            gold_change=choice.gold_change,
-            reputation_change=choice.reputation_change,
-            influence_change=choice.influence_change,
+        
+        # Получаем всех караванщиков и торговцев
+        stmt = select(Staff).where(
+            Staff.player_id == int(player.player_id),
+            Staff.role.in_([StaffRole.caravaner, StaffRole.merchant]),
+            Staff.status != StaffStatus.dead
         )
+        res = await session.execute(stmt)
+        staff_list = res.scalars().all()
 
-        text = (
-            f"📖 <b>Результат события: «{html.quote(event.event_title)}»</b>\n\n"
-            f"{html.quote(choice.result_text)}\n\n"
-            f"📈 <b>Изменения:</b>\n"
-            f"💰 Золото: <code>{choice.gold_change:+.2f} gold</code>\n"
-            f"⭐ Репутация: <code>{choice.reputation_change:+}</code>\n"
-            f"👑 Влияние: <code>{choice.influence_change:+}</code>"
-        )
+        now = datetime.now(UTC)
+        free_agents = []
+        busy_agents = []
 
+        for s in staff_list:
+            if s.blocked_until and s.blocked_until > now:
+                busy_agents.append(s)
+            elif s.fatigue >= 100:
+                busy_agents.append(s)
+            else:
+                free_agents.append(s)
+
+        text = "⛵ <b>Выбор агента для экспедиции</b>\n\n"
         builder = InlineKeyboardBuilder()
+
+        if free_agents:
+            text += "👥 <b>Доступные агенты:</b>\n"
+            for s in free_agents:
+                role_ru = "Караванщик" if s.role == StaffRole.caravaner else "Торговец"
+                text += f"• <b>{s.name}</b> ({role_ru}) — Навык: <code>{s.skill}</code> | Усталость: <code>{s.fatigue}%</code>\n"
+                
+                builder.row(
+                    InlineKeyboardButton(
+                        text=f"Отправить {s.name} ({role_ru})",
+                        callback_data=f"expedition:run:{s.staff_id}"
+                    )
+                )
+            
+            # Кнопка Bulk Action
+            if len(free_agents) > 1:
+                builder.row(
+                    InlineKeyboardButton(
+                        text="⛵ Отправить всех свободных в авто-поход",
+                        callback_data="expedition:run:all"
+                    )
+                )
+        else:
+            text += "❌ <i>У вас нет свободных караванщиков или торговцев. Направьте их на отдых в Таверне или наймите новых!</i>\n\n"
+
+        if busy_agents:
+            text += "\n⏳ <b>Занятые/Уставшие агенты:</b>\n"
+            for s in busy_agents:
+                role_ru = "Караванщик" if s.role == StaffRole.caravaner else "Торговец"
+                status_desc = "устал (100%)" if s.fatigue >= 100 else "в походе"
+                text += f"• {s.name} ({role_ru}) — {status_desc}\n"
+
         builder.row(
-            InlineKeyboardButton(text="🔙 Назад в меню", callback_data="screen:menu")
+            InlineKeyboardButton(text="🔙 К воротам", callback_data="screen:expeditions")
         )
 
         await callback.message.edit_text(
             text, parse_mode="HTML", reply_markup=builder.as_markup()
         )
-    except Exception as e:
-        await callback.answer(f"Ошибка применения эффекта: {str(e)}", show_alert=True)
 
-    await state.clear()
+    except PlayerNotFoundError:
+        await callback.answer("Профиль не найден.", show_alert=True)
     await callback.answer()
 
 
-@events_router.callback_query(F.data == "expedition:start")
-async def start_expedition(
+@events_router.callback_query(F.data.startswith("expedition:run:"))
+async def run_expedition(
     callback: CallbackQuery, state: FSMContext, session: AsyncSession
 ) -> None:
     """
-    Запускает случайную экспедицию.
+    Запускает экспедицию для выбранного агента (или bulk action).
     """
     if not callback.from_user or not callback.message or not isinstance(callback.message, Message):
         await callback.answer()
         return
 
+    agent_id_str = callback.data.split(":")[2]
     tg_id = callback.from_user.id
     player_dal = PlayerDAL(session)
 
     try:
         player = await player_dal.get_player(tg_id)
-        staff_list = await player_dal.get_player_staff(int(player.player_id))
-
-        # Выбираем доступного свободного агента (здоровый и не заблокированный)
-        now = datetime.now(UTC)
-        available_agents = []
-        for s in staff_list:
-            if str(s.status.value) != "dead":
-                if s.blocked_until is None or s.blocked_until <= now:
-                    available_agents.append(s)
-
-        if not available_agents:
-            await callback.answer(
-                "❌ Нет свободных агентов!\nНажмите 'Отдых' для уставших сотрудников "
-                "или наймите нового в разделе 'Персонал'.",
-                show_alert=True,
+        
+        # BULK ACTION
+        if agent_id_str == "all":
+            # Находим всех свободных агентов
+            stmt = select(Staff).where(
+                Staff.player_id == int(player.player_id),
+                Staff.role.in_([StaffRole.caravaner, StaffRole.merchant]),
+                Staff.status != StaffStatus.dead
             )
+            res = await session.execute(stmt)
+            staff_list = res.scalars().all()
+
+            now = datetime.now(UTC)
+            free_agents = [s for s in staff_list if (not s.blocked_until or s.blocked_until <= now) and s.fatigue < 100]
+
+            if not free_agents:
+                await callback.answer("Нет доступных агентов.", show_alert=True)
+                return
+
+            total_gold = Decimal("0.00")
+            details = []
+            
+            for agent in free_agents:
+                # Награда зависит от навыка
+                reward = Decimal(str(round(float(agent.skill) * random.uniform(1.2, 2.5), 2)))
+                total_gold += reward
+                
+                # Усталость +20%
+                agent.fatigue = min(100, agent.fatigue + 20)
+                # Блокировка на 2 минуты
+                agent.blocked_until = datetime.now(UTC) + timedelta(minutes=2)
+                session.add(agent)
+                
+                role_ru = "Караванщик" if agent.role == StaffRole.caravaner else "Торговец"
+                details.append(f"• {agent.name} ({role_ru}) принесет <b>{reward:.1f} gold</b>")
+                
+                # Записываем событие авто-экспедиции в лог игрока
+                await player_dal.log_player_event(
+                    player_id=int(player.player_id),
+                    event_type="expedition_event",
+                    summary=f"Отправил {agent.name} в торговый поход (+{reward:.1f} gold)",
+                    metadata={"agent_id": agent.staff_id, "gold_reward": float(reward)}
+                )
+
+            # Начисляем золото игроку
+            await player_dal.change_gold(int(player.player_id), total_gold)
+
+            text = (
+                f"⛵ <b>Торговый караван отправлен!</b>\n\n"
+                f"Вы собрали всех свободных агентов в единый караван и направили их на рынки соседних королевств.\n\n"
+                f"📜 <b>Детали похода:</b>\n" + "\n".join(details) + "\n\n"
+                f"💰 Суммарная выручка: <b>{total_gold:.1f} gold</b> (золото уже начислено).\n"
+                f"⏳ Агенты вернутся и будут готовы к новым поручениям через 2 минуты."
+            )
+
+            builder = InlineKeyboardBuilder()
+            builder.row(InlineKeyboardButton(text="🔙 К воротам", callback_data="screen:expeditions"))
+
+            await callback.message.edit_text(
+                text, parse_mode="HTML", reply_markup=builder.as_markup()
+            )
+            
+            # Обновим HUD
+            await update_hud(callback.bot, player, session)
+            await callback.answer("Караван отправлен!")
             return
 
-        agent = random.choice(available_agents)
-        # Выбираем тип события
+        # ИНТЕРАКТИВНОЕ СОБЫТИЕ ДЛЯ ОДНОГО АГЕНТА
+        agent_id = int(agent_id_str)
+        stmt = select(Staff).where(Staff.staff_id == agent_id)
+        res = await session.execute(stmt)
+        agent = res.scalar_one_or_none()
+
+        if not agent:
+            await callback.answer("Агент не найден.", show_alert=True)
+            return
+
         event_type = random.choice(list(ExpeditionEventType))
 
-        # Сохраняем детали экспедиции в FSM
         await state.update_data(
             active_expedition={
                 "staff_id": int(agent.staff_id),
@@ -231,7 +253,6 @@ async def start_expedition(
         )
         await state.set_state(ExpeditionStates.awaiting_choice)
 
-        # Сюжеты событий
         builder = InlineKeyboardBuilder()
         agent_name = str(agent.name)
         agent_skill = int(agent.skill)
@@ -298,9 +319,9 @@ async def start_expedition(
         await callback.message.edit_text(
             text, parse_mode="HTML", reply_markup=builder.as_markup()
         )
+
     except PlayerNotFoundError:
         await callback.answer("Профиль не найден.", show_alert=True)
-
     await callback.answer()
 
 
@@ -309,7 +330,7 @@ async def handle_expedition_choice(
     callback: CallbackQuery, state: FSMContext, session: AsyncSession
 ) -> None:
     """
-    Обрабатывает выбор игрока в экспедиции и рассчитывает результат.
+    Обрабатывает выбор игрока в экспедиции и рассчитывает результат с записью в лог.
     """
     if not callback.from_user or not callback.message or not isinstance(callback.message, Message) or not callback.data:
         await callback.answer()
@@ -320,7 +341,7 @@ async def handle_expedition_choice(
     exp_data = data.get("active_expedition")
 
     if not exp_data:
-        await callback.answer("Экспедиция устарела или не найдена.", show_alert=True)
+        await callback.answer("Экспедиция не найдена.", show_alert=True)
         await state.clear()
         return
 
@@ -328,7 +349,6 @@ async def handle_expedition_choice(
     event_type_str = str(exp_data["event_type"])
     event_type = ExpeditionEventType(event_type_str)
 
-    # Загружаем агента
     stmt = select(Staff).where(Staff.staff_id == staff_id)
     res = await session.execute(stmt)
     agent = res.scalar_one_or_none()
@@ -346,7 +366,6 @@ async def handle_expedition_choice(
         agent_name = str(agent.name)
         agent_skill = int(agent.skill)
 
-        # Вычисляем исход на основе формул
         outcome = calculate_expedition_outcome(agent_skill, event_type, equipment_bonus=0)
         success = bool(outcome["success"])
         reward_mult = float(outcome["reward_multiplier"])
@@ -355,30 +374,31 @@ async def handle_expedition_choice(
         text = ""
         gold_change = Decimal("0.00")
         injury_info = ""
+        log_summary = ""
 
-        # Увеличиваем усталость за поход
+        # Усталость
         agent.fatigue = min(100, int(agent.fatigue) + 15)
 
         if choice_action == "fight":
             if success:
                 gold_change = Decimal(str(round(150 * reward_mult, 2)))
                 text = (
-                    f"⚔️ <b>Победа!</b>\n\n"
-                    f"Агент <b>{html.quote(agent_name)}</b> проявил выдающуюся храбрость и разбил бандитов!\n"
+                    f"⚔️ <b>Победил бандитов!</b>\n\n"
+                    f"Агент <b>{html.quote(agent_name)}</b> проявил выдающуюся храбрость и разбил разбойников!\n"
                     f"Добыча составила: <b>{gold_change:.2f} gold</b>"
                 )
+                log_summary = f"Агент {agent_name} победил бандитов в походе (+{gold_change:.1f} gold)"
             else:
                 text = (
                     f"💀 <b>Поражение!</b>\n\n"
                     f"Агент <b>{html.quote(agent_name)}</b> не справился с бандитами и был вынужден бежать."
                 )
-                # Бросок на травму
+                log_summary = f"Агент {agent_name} проиграл бандитам в походе"
                 if random.random() <= injury_risk:
                     is_heavy = random.random() < 0.3
                     conseq = calculate_injury_consequences(is_heavy)
                     blocked_hours = conseq["blocked_hours"]
 
-                    # Блокируем агента
                     agent.status = StaffStatus.heavy_injured if is_heavy else StaffStatus.light_injured
                     agent.blocked_until = datetime.now(UTC) + timedelta(hours=blocked_hours)
 
@@ -386,17 +406,18 @@ async def handle_expedition_choice(
                         f"\n⚠️ <b>Травма:</b> Агент получил <b>{'тяжелую' if is_heavy else 'легкую'} травму</b> "
                         f"и заблокирован на <code>{blocked_hours} ч.</code>!"
                     )
+                    log_summary += f" и получил травму (блок на {blocked_hours}ч)"
 
         elif choice_action == "bribe":
             gold_change = Decimal("-100.00")
             text = (
-                f"💰 <b>Откуп</b>\n\n"
+                f"💰 <b>Выкуп</b>\n\n"
                 f"Вы решили не рисковать агентом <b>{html.quote(agent_name)}</b> и заплатили бандитам 100 gold.\n"
                 f"Агент благополучно вернулся назад."
             )
+            log_summary = f"Откупился от бандитов в экспедиции с {agent_name} (-100 gold)"
 
         elif choice_action == "trade_accept":
-            # Проверяем золото
             if float(player.gold) < 150:
                 await callback.answer("❌ Недостаточно золота для покупки! (нужно 150 gold)", show_alert=True)
                 return
@@ -410,23 +431,25 @@ async def handle_expedition_choice(
                     f"Агент выгодно купил чертежи и перепродал их гильдии за 350 gold.\n"
                     f"Чистая выручка: <b>+200.00 gold</b>!"
                 )
+                log_summary = f"Выгодно купил эльфийские чертежи с {agent_name} (+200 gold)"
             else:
                 text = (
                     f"❌ <b>Обман!</b>\n\n"
                     f"Чертежи оказались фальшивыми. Вы потеряли 150 gold."
                 )
+                log_summary = f"Агента {agent_name} обманул фальшивый торговец (-150 gold)"
                 if random.random() <= injury_risk:
-                    # Легкая травма от расстройства/потасовки
                     agent.status = StaffStatus.light_injured
                     agent.blocked_until = datetime.now(UTC) + timedelta(hours=12)
                     injury_info = f"\n⚠️ Агент расстроился и заблокирован на <code>12 ч.</code>"
+                    log_summary += " (агент заблокирован на 12ч)"
 
         elif choice_action == "trade_decline":
             text = "Вы решили проигнорировать предложение купца. Экспедиция завершена ничем."
+            log_summary = f"Агент {agent_name} прошел мимо купца"
 
         elif choice_action == "altar_activate":
             if success:
-                # Бафф навыка
                 agent.skill = min(100, agent_skill + 5)
                 gold_change = Decimal("100.00")
                 text = (
@@ -435,23 +458,33 @@ async def handle_expedition_choice(
                     f"Навык агента повышен: <b>+5</b> (теперь <code>{agent.skill}</code>).\n"
                     f"Найдено золота: <b>+100.00 gold</b>!"
                 )
+                log_summary = f"Агент {agent_name} активировал алтарь (+5 навык, +100 gold)"
             else:
-                # Дебафф навыка
                 agent.skill = max(1, agent_skill - 5)
                 text = (
                     f"🔮 <b>Древнее проклятие!</b>\n\n"
                     f"Алтарь вспыхнул темным пламенем.\n"
                     f"Навык агента понижен: <b>-5</b> (теперь <code>{agent.skill}</code>)."
                 )
+                log_summary = f"Агент {agent_name} проклят алтарем (-5 навык)"
 
         elif choice_action == "altar_pass":
             text = "Вы решили не трогать алтарь и прошли мимо. Экспедиция завершена."
+            log_summary = f"Агент {agent_name} прошел мимо алтаря"
 
-        # Применяем финансовые изменения
+        # Применяем финансы
         if gold_change != 0:
             await player_dal.change_gold(int(player.player_id), gold_change)
 
         text += injury_info
+
+        # Записываем в лог событий игрока
+        await player_dal.log_player_event(
+            player_id=int(player.player_id),
+            event_type="expedition_event",
+            summary=log_summary,
+            metadata={"agent_id": staff_id, "action": choice_action, "success": success}
+        )
 
         builder = InlineKeyboardBuilder()
         builder.row(
@@ -461,6 +494,10 @@ async def handle_expedition_choice(
         await callback.message.edit_text(
             text, parse_mode="HTML", reply_markup=builder.as_markup()
         )
+        
+        # Обновим HUD
+        await update_hud(callback.bot, player, session)
+
     except Exception as e:
         await callback.answer(f"Ошибка завершения экспедиции: {str(e)}", show_alert=True)
 

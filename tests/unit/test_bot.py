@@ -19,7 +19,15 @@ async def test_cmd_start_existing_user() -> None:
     message.answer = AsyncMock()
 
     session = AsyncMock()
-    mock_player = Player(player_id=1, tg_id=12345, gold=Decimal("1000.00"))
+    mock_player = Player(
+        player_id=1,
+        tg_id=12345,
+        gold=Decimal("1000.00"),
+        tutorial_step=3,
+        reputation=0,
+        influence=0,
+        tavern_level=TavernTier.garage,
+    )
 
     with patch("src.bot.handlers.basic.PlayerDAL") as mock_dal_class:
         mock_dal_instance = mock_dal_class.return_value
@@ -30,7 +38,7 @@ async def test_cmd_start_existing_user() -> None:
         mock_dal_class.assert_called_once_with(session)
         mock_dal_instance.get_player.assert_called_once_with(12345)
         message.answer.assert_called_once()
-        assert "Рады видеть тебя снова" in message.answer.call_args[0][0]
+        assert "С возвращением на завод" in message.answer.call_args[0][0]
 
 
 @pytest.mark.asyncio
@@ -42,7 +50,7 @@ async def test_cmd_start_new_user() -> None:
     message.answer = AsyncMock()
 
     session = AsyncMock()
-    mock_player = Player(player_id=1, tg_id=12345, gold=Decimal("1000.00"))
+    mock_player = Player(player_id=1, tg_id=12345, gold=Decimal("1000.00"), tutorial_step=0)
 
     with patch("src.bot.handlers.basic.PlayerDAL") as mock_dal_class:
         mock_dal_instance = mock_dal_class.return_value
@@ -55,7 +63,7 @@ async def test_cmd_start_new_user() -> None:
         mock_dal_instance.get_player.assert_called_once_with(12345)
         mock_dal_instance.create_player.assert_called_once_with(12345)
         message.answer.assert_called_once()
-        assert "стартовый капитал" in message.answer.call_args[0][0]
+        assert "дедовский гараж" in message.answer.call_args[0][0]
 
 
 @pytest.mark.asyncio

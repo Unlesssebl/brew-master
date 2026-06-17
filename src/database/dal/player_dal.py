@@ -1,10 +1,11 @@
+from typing import cast
 from datetime import UTC, datetime
 from decimal import Decimal
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database.models import Batch, Player, Resource, Staff, StaffStatus, TavernTier
+from src.database.models import Batch, Player, Resource, Staff, StaffStatus, TavernTier, PlayerEventLog
 
 from .exceptions import InsufficientFundsError, PlayerNotFoundError
 
@@ -69,7 +70,7 @@ class PlayerDAL:
         Активным считается сотрудник со статусом, отличным от 'dead',
         и не заблокированный (blocked_until в прошлом или отсутствует).
         """
-        from datetime import datetime
+        from datetime import datetime, UTC
 
         stmt = select(Staff).where(
             Staff.player_id == player_id, Staff.role == role, Staff.status != StaffStatus.dead
@@ -96,7 +97,8 @@ class PlayerDAL:
         )
         result = await self.session.execute(stmt)
 
-        if result.rowcount == 0:
+        rowcount = getattr(result, "rowcount", 0)
+        if rowcount == 0:
             # Выясняем причину: игрока нет или не хватает золота
             stmt_check = select(Player.gold).where(Player.player_id == player_id)
             check_res = await self.session.execute(stmt_check)
@@ -240,7 +242,7 @@ class PlayerDAL:
         barrels = 0
         for batch in batches:
             batch.is_completed = True
-            barrels += int(batch.quantity_barrels)
+            barrels += cast(int, batch.quantity_barrels)
 
         await self.session.flush()
         return {
@@ -291,3 +293,70 @@ class PlayerDAL:
             .values(quantity=Resource.quantity + amount)
         )
         await self.session.execute(stmt)
+
+    async def log_player_event(
+        self, player_id: int, event_type: str, summary: str, metadata: dict | None = None
+    ) -> PlayerEventLog:
+        """
+        Записать событие игрока в лог событий.
+        """
+        event = PlayerEventLog(
+            player_id=player_id,
+            event_type=event_type,
+            summary=summary,
+            metadata_json=metadata,
+        )
+        self.session.add(event)
+        await self.session.flush()
+        return event
+
+    async def get_recent_events(self, player_id: int, limit: int = 10) -> list[PlayerEventLog]:
+        """
+        Получить последние N событий игрока (отсортированные по новизне).
+        """
+        stmt = (
+            select(PlayerEventLog)
+            .where(PlayerEventLog.player_id == player_id)
+            .order_by(PlayerEventLog.created_at.desc())
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def use_resources(self, player_id: int, resources_to_use: dict[str, Decimal]) -> None:
+        """
+        Списывает указанные ресурсы у игрока.
+        """
+        for r_type, amount in resources_to_use.items():
+            dec_amount = Decimal(str(amount))
+            stmt = (
+                update(Resource)
+                .where(Resource.player_id == player_id, Resource.resource_type == r_type, Resource.quantity >= dec_amount)
+                .values(quantity=Resource.quantity - dec_amount)
+            )
+            result = await self.session.execute(stmt)
+            rowcount = getattr(result, "rowcount", 0)
+            if rowcount == 0:
+                raise InsufficientFundsError(f"Недостаточно ресурса: {r_type}")
+
+    async def get_pvp_targets(self, exclude_id: int, current_tier: TavernTier, limit: int = 5) -> list[Player]:
+        """
+        Найти до N игроков для PvP-целей в диапазоне ±1 уровня таверны от текущего,
+        исключая самого игрока.
+        """
+        tiers = list(TavernTier)
+        try:
+            idx = tiers.index(current_tier)
+            min_idx = max(0, idx - 1)
+            max_idx = min(len(tiers) - 1, idx + 1)
+            allowed_tiers = tiers[min_idx:max_idx + 1]
+        except ValueError:
+            allowed_tiers = [current_tier]
+
+        stmt = (
+            select(Player)
+            .where(Player.player_id != exclude_id, Player.tavern_level.in_(allowed_tiers))
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())

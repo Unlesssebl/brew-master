@@ -53,3 +53,39 @@ def build_event_prompt(player_state: dict[str, Any]) -> str:
 
     player_state_json = json.dumps(player_state, ensure_ascii=False, indent=2)
     return SYSTEM_EVENT_PROMPT.format(player_state=player_state_json, tone_style=tone_style)
+
+
+SYSTEM_PATENT_LORE_PROMPT = """Ты — летописец пивоваренной гильдии. Игрок зарегистрировал патент на новый сорт пива.
+Твоя задача — сгенерировать:
+1. Поэтичное название сорта (до 40 символов, на русском, фэнтезийный стиль, без кавычек вокруг названия)
+2. Лор — 2-3 предложения о вкусе, истории и легенде этого пива.
+
+Ты НЕ изменяешь и НЕ придумываешь характеристики. Характеристики ДАНЫ:
+- Крепость: {strength} | Горечь: {bitterness} | Аромат: {aroma}
+- Стабильность: {stability}% | Качество: {quality_modifier}x
+
+История пивовара (последние события):
+{player_history}
+
+Правило: верни ТОЛЬКО JSON без markdown-оберток (вроде ```json и ```). Ответ должен начинаться с {{ и заканчиваться на }}.
+Формат схемы JSON для ответа:
+{{
+    "name": "Название сорта пива (строка до 40 символов)",
+    "lore": "История и описание вкуса (строка до 300 символов)"
+}}
+"""
+
+
+def build_patent_lore_prompt(recipe_stats: dict[str, Any], player_history: list[str]) -> str:
+    """
+    Формирует промпт для генерации лора патента на основе характеристик рецепта и истории игрока.
+    """
+    history_text = "\n".join([f"- {event}" for event in player_history]) if player_history else "История пуста."
+    return SYSTEM_PATENT_LORE_PROMPT.format(
+        strength=recipe_stats.get("strength", 0),
+        bitterness=recipe_stats.get("bitterness", 0),
+        aroma=recipe_stats.get("aroma", 0),
+        stability=recipe_stats.get("stability", 0),
+        quality_modifier=recipe_stats.get("quality_modifier", 1.0),
+        player_history=history_text
+    )

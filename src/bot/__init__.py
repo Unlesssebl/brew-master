@@ -7,6 +7,9 @@ from .handlers.brewing import brewing_router
 from .handlers.buildings import buildings_router
 from .handlers.events import events_router
 from .handlers.craft import craft_router
+from .handlers.brewery_hall import brewery_hall_router
+from .handlers.market import market_router
+from .handlers.slums import slums_router
 from .middlewares.db import DbSessionMiddleware
 
 
@@ -21,6 +24,9 @@ def setup_routers(dp: Dispatcher, session_maker: async_sessionmaker) -> None:
     dp.include_router(buildings_router)
     dp.include_router(events_router)
     dp.include_router(craft_router)
+    dp.include_router(brewery_hall_router)
+    dp.include_router(market_router)
+    dp.include_router(slums_router)
 
     # Регистрируем middleware для сессий БД
     db_middleware = DbSessionMiddleware(session_maker)

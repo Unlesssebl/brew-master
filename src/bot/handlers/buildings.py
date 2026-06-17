@@ -1,13 +1,14 @@
+from typing import cast
 from decimal import Decimal
 from aiogram import F, Router, html
-from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.bot.keyboards.inline import get_building_keyboard
 from src.database.dal import PlayerDAL, PlayerNotFoundError, InsufficientFundsError
 from src.database.models import TavernTier
+from src.bot.utils.formatters import get_tavern_name
+from src.bot.utils.hud import update_hud
 
 buildings_router = Router()
 
@@ -26,56 +27,10 @@ NEXT_TIER = {
 }
 
 
-@buildings_router.callback_query(F.data == "screen:buildings")
-async def show_buildings(callback: CallbackQuery, session: AsyncSession) -> None:
+@buildings_router.callback_query(F.data == "screen:tavern")
+async def show_tavern(callback: CallbackQuery, session: AsyncSession) -> None:
     """
-    Экран со списком всех зданий игрока.
-    """
-    if not callback.from_user or not callback.message or not isinstance(callback.message, Message):
-        await callback.answer()
-        return
-
-    tg_id = callback.from_user.id
-    player_dal = PlayerDAL(session)
-
-    try:
-        player = await player_dal.get_player(tg_id)
-        level_str = str(player.tavern_level.value) if player.tavern_level else "garage"
-
-        text = (
-            f"🏢 <b>Здания вашей Пивной Империи</b>\n\n"
-            f"Развивайте здания, чтобы открывать новые рецепты, нанимать редких специалистов "
-            f"и повышать прибыль!\n\n"
-            f"1. 🍺 <b>Пивоварня / Таверна</b>\n"
-            f"   Уровень: <code>{level_str.capitalize()}</code>\n\n"
-            f"Выберите здание из списка для управления:"
-        )
-
-        builder = InlineKeyboardBuilder()
-        builder.row(
-            InlineKeyboardButton(
-                text="🍺 Пивоварня / Таверна", callback_data="building:brewery"
-            )
-        )
-        builder.row(
-            InlineKeyboardButton(
-                text="🔙 Назад в меню", callback_data="screen:menu"
-            )
-        )
-
-        await callback.message.edit_text(
-            text, parse_mode="HTML", reply_markup=builder.as_markup()
-        )
-    except PlayerNotFoundError:
-        await callback.answer("Профиль не найден.", show_alert=True)
-
-    await callback.answer()
-
-
-@buildings_router.callback_query(F.data == "building:brewery")
-async def show_brewery_details(callback: CallbackQuery, session: AsyncSession) -> None:
-    """
-    Детальный экран Пивоварни.
+    Экран "Моя Таверна" (бывший экран зданий).
     """
     if not callback.from_user or not callback.message or not isinstance(callback.message, Message):
         await callback.answer()
@@ -88,6 +43,15 @@ async def show_brewery_details(callback: CallbackQuery, session: AsyncSession) -
         player = await player_dal.get_player(tg_id)
         current_tier = TavernTier(str(player.tavern_level.value)) if player.tavern_level else TavernTier.garage
 
+        tavern_levels = {
+            TavernTier.garage: "Гараж (уровень 1)",
+            TavernTier.tavern: "Таверна (уровень 2)",
+            TavernTier.brewery: "Пивоварня (уровень 3)",
+            TavernTier.factory: "Завод (уровень 4)",
+            TavernTier.guild: "Гильдия Пивоваров (уровень 5)",
+        }
+        rank_str = tavern_levels.get(current_tier, "Неизвестно")
+
         descriptions = {
             TavernTier.garage: "🏚️ <b>Гараж:</b> Скромная пивоварня на коленке. Отсюда начнется ваша пивная империя.",
             TavernTier.tavern: "🍺 <b>Таверна:</b> Полноценный пивной паб с постоянными гостями.",
@@ -96,41 +60,56 @@ async def show_brewery_details(callback: CallbackQuery, session: AsyncSession) -
             TavernTier.guild: "🏰 <b>Гильдия Алхимиков:</b> Легендарное место. Здесь куется пивная история.",
         }
 
+        t_name = get_tavern_name(cast(int, player.reputation))
         desc = descriptions.get(current_tier, "")
 
         text = (
-            f"🍺 <b>Управление Пивоварней</b>\n\n"
+            f"🍻 <b>Моя Таверна «{t_name}»</b>\n\n"
             f"{desc}\n\n"
-            f"Текущий уровень: <code>{current_tier.value.upper()}</code>\n"
+            f"Текущий уровень: <code>{rank_str}</code>\n"
+        )
+
+        builder = InlineKeyboardBuilder()
+        builder.row(
+            InlineKeyboardButton(text="👥 Управление персоналом", callback_data="screen:staff")
         )
 
         if current_tier in NEXT_TIER:
             next_tier = NEXT_TIER[current_tier]
             cost = UPGRADE_COSTS[current_tier]
             text += (
-                f"Следующий уровень: <code>{next_tier.value.upper()}</code>\n"
+                f"Следующий уровень: <code>{tavern_levels.get(next_tier, next_tier.value).capitalize()}</code>\n"
                 f"💰 Стоимость улучшения: <b>{cost:.2f} gold</b>\n"
             )
+            builder.row(
+                InlineKeyboardButton(text="⬆️ Улучшить таверну", callback_data="tavern:upgrade")
+            )
         else:
-            text += "🌟 Достигнут максимальный уровень Пивоварни!\n"
+            text += "🌟 Достигнут максимальный уровень улучшения!\n"
+
+        builder.row(
+            InlineKeyboardButton(text="🔙 Вернуться в город", callback_data="screen:menu")
+        )
 
         await callback.message.edit_text(
-            text,
-            parse_mode="HTML",
-            reply_markup=get_building_keyboard("brewery", current_tier.value),
+            text, parse_mode="HTML", reply_markup=builder.as_markup()
         )
+
+        # Обновим HUD
+        await update_hud(callback.bot, player, session)
+
     except PlayerNotFoundError:
         await callback.answer("Профиль не найден.", show_alert=True)
 
     await callback.answer()
 
 
-@buildings_router.callback_query(F.data.startswith("building:upgrade:"))
-async def upgrade_building_callback(callback: CallbackQuery, session: AsyncSession) -> None:
+@buildings_router.callback_query(F.data == "tavern:upgrade")
+async def upgrade_tavern_callback(callback: CallbackQuery, session: AsyncSession) -> None:
     """
-    Обработчик улучшения здания.
+    Обработчик улучшения таверны.
     """
-    if not callback.from_user or not callback.message or not isinstance(callback.message, Message) or not callback.data:
+    if not callback.from_user or not callback.message or not isinstance(callback.message, Message):
         await callback.answer()
         return
 
@@ -147,17 +126,26 @@ async def upgrade_building_callback(callback: CallbackQuery, session: AsyncSessi
 
         next_tier = NEXT_TIER[current_tier]
 
-        await player_dal.upgrade_tavern_level(int(player.player_id))
+        await player_dal.upgrade_tavern_level(cast(int, player.player_id))
+        
+        # Запишем событие улучшения в лог событий игрока!
+        summary = f"Улучшил таверну до ранга '{next_tier.value.capitalize()}'"
+        await player_dal.log_player_event(
+            player_id=cast(int, player.player_id),
+            event_type="tavern_upgrade",
+            summary=summary,
+            metadata={"old_tier": current_tier.value, "new_tier": next_tier.value}
+        )
 
         await callback.answer(
-            f"🎉 Ура! Здание успешно улучшено до уровня {next_tier.value.capitalize()}!",
+            f"🎉 Ура! Таверна успешно улучшена до ранга {next_tier.value.capitalize()}!",
             show_alert=True,
         )
-        # Перерисовываем детальный экран
-        await show_brewery_details(callback, session)
+        
+        # Перерисовываем экран таверны
+        await show_tavern(callback, session)
 
     except InsufficientFundsError:
-        # Снова получаем игрока, чтобы достать current_tier на случай, если выше упало
         try:
             player = await player_dal.get_player(tg_id)
             current_tier = TavernTier(str(player.tavern_level.value)) if player.tavern_level else TavernTier.garage

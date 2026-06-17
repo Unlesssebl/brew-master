@@ -5,7 +5,7 @@ from src.llm_engine.schemas import EventChoice
 
 def get_main_menu_keyboard(alerts: dict | None = None) -> InlineKeyboardMarkup:
     """
-    Возвращает inline-клавиатуру главного меню.
+    Возвращает inline-клавиатуру главного меню в виде Карты Города (7 локаций).
     """
     builder = InlineKeyboardBuilder()
 
@@ -26,15 +26,19 @@ def get_main_menu_keyboard(alerts: dict | None = None) -> InlineKeyboardMarkup:
             )
 
     builder.row(
-        InlineKeyboardButton(text="🍺 Варка", callback_data="screen:brewing"),
-        InlineKeyboardButton(text="🏢 Здания", callback_data="screen:buildings"),
+        InlineKeyboardButton(text="🍻 Моя Таверна", callback_data="screen:tavern"),
+        InlineKeyboardButton(text="🏺 Тёмный Погреб", callback_data="screen:inventory"),
     )
     builder.row(
-        InlineKeyboardButton(text="🎒 Инвентарь", callback_data="screen:inventory"),
-        InlineKeyboardButton(text="👥 Персонал", callback_data="screen:staff"),
+        InlineKeyboardButton(text="🔥 Варочный Зал", callback_data="screen:brewery_hall"),
+        InlineKeyboardButton(text="⚖️ Торговая площадь", callback_data="screen:market"),
     )
     builder.row(
-        InlineKeyboardButton(text="⛵ Экспедиции", callback_data="screen:expeditions")
+        InlineKeyboardButton(text="🌑 Тёмный переулок", callback_data="screen:slums"),
+        InlineKeyboardButton(text="🗺️ Ворота", callback_data="screen:expeditions"),
+    )
+    builder.row(
+        InlineKeyboardButton(text="📜 Летопись Мастера", callback_data="screen:chronicle")
     )
     return builder.as_markup()
 

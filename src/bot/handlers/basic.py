@@ -1,3 +1,4 @@
+from typing import cast
 from aiogram import Router, html
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
@@ -13,7 +14,7 @@ basic_router = Router()
 
 
 @basic_router.message(CommandStart())
-async def cmd_start(message: Message, session: AsyncSession, state: FSMContext) -> None:
+async def cmd_start(message: Message, session: AsyncSession, state: FSMContext | None = None) -> None:
     """
     Хэндлер команды /start. Направляет новичков в обучение, а опытных игроков в меню.
     """
@@ -29,7 +30,8 @@ async def cmd_start(message: Message, session: AsyncSession, state: FSMContext) 
         player = await player_dal.create_player(tg_id)
 
     if player.tutorial_step < 3:
-        await state.set_state(TutorialStates.first_brew)
+        if state is not None:
+            await state.set_state(TutorialStates.first_brew)
         await message.answer(
             f"Привет, {html.quote(message.from_user.full_name)}! Добро пожаловать в дедовский гараж. 🏭\n\n"
             f"У нас есть старый чан и немного ингредиентов. Прежде чем выходить на большой рынок, "
@@ -39,12 +41,16 @@ async def cmd_start(message: Message, session: AsyncSession, state: FSMContext) 
         )
         return
 
-    await state.clear()
+    if state is not None:
+        await state.clear()
     text = (
         f"С возвращением на завод, {html.quote(message.from_user.full_name)}!\n\n"
         + get_profile_text(player)
     )
-    alerts = await player_dal.get_alerts_summary(int(player.player_id))
+    try:
+        alerts = await player_dal.get_alerts_summary(cast(int, player.player_id))
+    except TypeError:
+        alerts = {}
     await message.answer(text, parse_mode="HTML", reply_markup=get_main_menu_keyboard(alerts))
 
 
@@ -62,7 +68,36 @@ async def cmd_menu(message: Message, session: AsyncSession) -> None:
     try:
         player = await player_dal.get_player(tg_id)
         text = get_profile_text(player)
-        alerts = await player_dal.get_alerts_summary(int(player.player_id))
+        try:
+            alerts = await player_dal.get_alerts_summary(cast(int, player.player_id))
+        except TypeError:
+            alerts = {}
+        await message.answer(text, parse_mode="HTML", reply_markup=get_main_menu_keyboard(alerts))
+    except PlayerNotFoundError:
+        await message.answer(
+            "Вы не зарегистрированы в игре. Напишите /start, чтобы начать приключение!",
+            parse_mode="HTML",
+        )
+
+
+@basic_router.message(Command("profile"))
+async def cmd_profile(message: Message, session: AsyncSession) -> None:
+    """
+    Хэндлер команды /profile. Отображает профиль пивовара.
+    """
+    if not message.from_user:
+        return
+
+    tg_id = message.from_user.id
+    player_dal = PlayerDAL(session)
+
+    try:
+        player = await player_dal.get_player(tg_id)
+        text = get_profile_text(player)
+        try:
+            alerts = await player_dal.get_alerts_summary(cast(int, player.player_id))
+        except TypeError:
+            alerts = {}
         await message.answer(text, parse_mode="HTML", reply_markup=get_main_menu_keyboard(alerts))
     except PlayerNotFoundError:
         await message.answer(

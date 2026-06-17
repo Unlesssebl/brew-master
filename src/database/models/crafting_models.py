@@ -106,6 +106,10 @@ class Patent(Base):
     )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
+    lore_name: Mapped[str | None] = mapped_column(String(100), nullable=True, default=None)
+    lore_text: Mapped[str | None] = mapped_column(String(500), nullable=True, default=None)
+    card_image_file_id: Mapped[str | None] = mapped_column(String(200), nullable=True, default=None)
+
     # Relationships
     player: Mapped["Player"] = relationship(back_populates="patents")
     recipe: Mapped["Recipe"] = relationship(back_populates="patents")

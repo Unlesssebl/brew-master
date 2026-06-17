@@ -33,3 +33,19 @@ class StaffStates(StatesGroup):
     Состояния управления персоналом.
     """
     managing = State()
+
+
+class PatentStates(StatesGroup):
+    viewing_bureau = State()
+    naming_patent = State()
+
+
+class MarketStates(StatesGroup):
+    viewing_market = State()
+    buying_ingredients = State()
+    selling_barrels = State()
+
+
+class PvPStates(StatesGroup):
+    viewing_slums = State()
+    targeting = State()
