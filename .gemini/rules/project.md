@@ -19,7 +19,7 @@
 | [`docs/05_ai_pipelines.md`](file:///f:/Work/Projects/brew-master/docs/05_ai_pipelines.md) | AI пайплайны — агенты, процессы |
 | [`docs/06_llm_config.md`](file:///f:/Work/Projects/brew-master/docs/06_llm_config.md) | Конфигурация LLM — настройки генерации и промпты |
 | [`docs/07_telegram_native_game_dev.md`](file:///f:/Work/Projects/brew-master/docs/07_telegram_native_game_dev.md) | База знаний — разработка нативных Telegram-игр (Bot API, лимиты, архитектура) |
-
+| [`docs/08_native_bot_mechanics.md`](file:///f:/Work/Projects/brew-master/docs/08_native_bot_mechanics.md) | Экстремальные механики на базе новых фичей Telegram (Концепты "Живой таверны", QTE, Реакции) |
 ## ⚠️ Актуальность документации
 
 > [!WARNING]
@@ -28,6 +28,14 @@
 > 1. **Доверяй коду**, а не документу — код является источником правды.
 > 2. **Сообщи пользователю** о найденном расхождении, прежде чем принимать решение.
 > 3. **Предложи обновить docs** по итогам работы.
+
+## ⚠️ Статус реализации механик (Vision vs Reality)
+
+> [!CAUTION]
+> **Концепты ≠ Готовый код!**
+> Механики, описанные в `docs/01_gdd.md`, `docs/08_native_bot_mechanics.md` (D-pad, QTE, Социальные Рейды на Реакциях, Анимированные матрицы и т.д.) — это **концепты и планы**. 
+> - **НЕ считай их уже реализованными**, пока явно не увидишь реализацию в исходном коде Python.
+> - На данный момент проект находится на стадии PoC (Proof of Concept). Всегда проверяй файлы в папке `scripts/` и основную структуру бота, чтобы понять реальный прогресс.
 
 ## Принцип работы
 
