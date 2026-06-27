@@ -8,6 +8,7 @@ from sqlalchemy import (
     Integer,
     Numeric,
     String,
+    SmallInteger,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -37,6 +38,18 @@ class MarketSaturation(Base):
 
     market_segment: Mapped[str] = mapped_column(String(20), primary_key=True)
     volume_sold_24h: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_updated: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class IngredientPrice(Base):
+    __tablename__ = "ingredient_prices"
+    __table_args__ = ({"schema": "economy"},)
+
+    ingredient: Mapped[str] = mapped_column(String(20), primary_key=True)
+    price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    trend: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0)
     last_updated: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

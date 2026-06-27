@@ -12,14 +12,33 @@
 
 | Файл | Содержание |
 |------|-----------|
-| [`docs/01_gdd.md`](f:/Work/Projects/tg-game-pivovar/docs/01_gdd.md) | Game Design Document — механики, геймплей, концепция |
-| [`docs/02_architecture.md`](f:/Work/Projects/tg-game-pivovar/docs/02_architecture.md) | Архитектура системы — структура проекта, паттерны |
-| [`docs/03_database.md`](f:/Work/Projects/tg-game-pivovar/docs/03_database.md) | Схема БД — таблицы, связи, поля |
-| [`docs/04_math_and_economy.md`](f:/Work/Projects/tg-game-pivovar/docs/04_math_and_economy.md) | Математика и экономика — формулы, балансировка |
-| [`docs/05_ai_pipelines.md`](f:/Work/Projects/tg-game-pivovar/docs/05_ai_pipelines.md) | AI пайплайны — агенты, процессы |
+| [`docs/01_gdd.md`](file:///f:/Work/Projects/brew-master/docs/01_gdd.md) | Game Design Document — механики, геймплей, концепция |
+| [`docs/02_architecture.md`](file:///f:/Work/Projects/brew-master/docs/02_architecture.md) | Архитектура системы — структура проекта, паттерны |
+| [`docs/03_database.md`](file:///f:/Work/Projects/brew-master/docs/03_database.md) | Схема БД — таблицы, связи, поля |
+| [`docs/04_math_and_economy.md`](file:///f:/Work/Projects/brew-master/docs/04_math_and_economy.md) | Математика и экономика — формулы, балансировка |
+| [`docs/05_ai_pipelines.md`](file:///f:/Work/Projects/brew-master/docs/05_ai_pipelines.md) | AI пайплайны — агенты, процессы |
+| [`docs/06_llm_config.md`](file:///f:/Work/Projects/brew-master/docs/06_llm_config.md) | Конфигурация LLM — настройки генерации и промпты |
+| [`docs/07_telegram_native_game_dev.md`](file:///f:/Work/Projects/brew-master/docs/07_telegram_native_game_dev.md) | База знаний — разработка нативных Telegram-игр (Bot API, лимиты, архитектура) |
+| [`docs/08_native_bot_mechanics.md`](file:///f:/Work/Projects/brew-master/docs/08_native_bot_mechanics.md) | Экстремальные механики на базе новых фичей Telegram (Концепты "Живой таверны", QTE, Реакции) |
+## ⚠️ Актуальность документации
+
+> [!WARNING]
+> Информация в директории `docs/` **может быть неактуальной**.
+> При обнаружении конфликта между документацией и фактическим кодом:
+> 1. **Доверяй коду**, а не документу — код является источником правды.
+> 2. **Сообщи пользователю** о найденном расхождении, прежде чем принимать решение.
+> 3. **Предложи обновить docs** по итогам работы.
+
+## ⚠️ Статус реализации механик (Vision vs Reality)
+
+> [!CAUTION]
+> **Концепты ≠ Готовый код!**
+> Механики, описанные в `docs/01_gdd.md`, `docs/08_native_bot_mechanics.md` (D-pad, QTE, Социальные Рейды на Реакциях, Анимированные матрицы и т.д.) — это **концепты и планы**. 
+> - **НЕ считай их уже реализованными**, пока явно не увидишь реализацию в исходном коде Python.
+> - На данный момент проект находится на стадии PoC (Proof of Concept). Всегда проверяй файлы в папке `scripts/` и основную структуру бота, чтобы понять реальный прогресс.
 
 ## Принцип работы
 
-1. **Сначала документация** — прочитай релевантные docs перед любой реализацией
-2. **Следуй спецификации** — реализация должна соответствовать GDD и архитектуре
-3. **Обновляй docs** — если что-то меняется, предлагай обновить соответствующий документ
+1. **Сначала документация** — прочитай релевантные docs перед любой реализацией.
+2. **Следуй спецификации** — реализация должна соответствовать GDD и архитектуре (с учетом поправки на устаревание).
+3. **Обновляй docs** — если что-то меняется или найдена неактуальная информация, смело обновляй соответствующий документ.

@@ -1,68 +1,27 @@
+from typing import cast
 import random
 from decimal import Decimal
 from aiogram import F, Router, html
-from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.bot.keyboards.inline import get_main_menu_keyboard, add_global_navigation_footer
+from src.bot.states import TutorialStates
+from src.bot.utils.formatters import get_reputation_title, get_tavern_name
+from src.bot.utils.hud import send_or_edit_dashboard
 from src.database.dal import PlayerDAL, PlayerNotFoundError
-from src.database.models import Player, Staff, Batch
-from src.bot.utils.keyboards import get_main_menu_keyboard
+from src.database.models import Staff, Batch, Patent, Recipe, TransactionLog
 
 menu_router = Router()
-
-
-def get_profile_text(player: Player) -> str:
-    """
-    Формирует текст профиля игрока.
-    """
-    level = player.tavern_level.value if player.tavern_level else "garage"
-    return (
-        f"👑 <b>Профиль пивовара</b>\n"
-        f"<code>┌────────────────────────────</code>\n"
-        f"💰 <b>Золото:</b> <code>{player.gold:.2f} gold</code>\n"
-        f"⭐ <b>Репутация:</b> <code>{player.reputation}</code>\n"
-        f"🔥 <b>Влияние:</b> <code>{player.influence}</code>\n"
-        f"🍺 <b>Уровень таверны:</b> <code>{level.capitalize()}</code>\n"
-        f"<code>└────────────────────────────</code>\n\n"
-        f"Используйте кнопки ниже для управления вашей пивной империей!"
-    )
-
-
-@menu_router.message(CommandStart())
-@menu_router.message(Command("menu"))
-async def cmd_start_menu(message: Message, session: AsyncSession, state: FSMContext) -> None:
-    """
-    Хэндлер команды /start и /menu. Инициализирует профиль и отправляет главное меню.
-    """
-    await state.clear()
-    if not message.from_user:
-        return
-
-    tg_id = message.from_user.id
-    player_dal = PlayerDAL(session)
-
-    try:
-        player = await player_dal.get_player(tg_id)
-        text = get_profile_text(player)
-    except PlayerNotFoundError:
-        player = await player_dal.create_player(tg_id)
-        text = (
-            f"Приветствуем тебя, {html.quote(message.from_user.full_name)}, в Brew Master!\n"
-            f"Мы создали для тебя профиль пивовара и выдали стартовый капитал: <b>1000.00 gold</b> 💰\n\n"
-            + get_profile_text(player)
-        )
-
-    await message.answer(text, parse_mode="HTML", reply_markup=get_main_menu_keyboard())
 
 
 @menu_router.callback_query(F.data == "screen:menu")
 async def show_menu_callback(callback: CallbackQuery, session: AsyncSession, state: FSMContext) -> None:
     """
-    Отображает главное меню при нажатии кнопки "Назад в меню".
+    Отображает главное меню (Карту Города) при нажатии кнопки "Назад в меню/город".
     """
     await state.clear()
     if not callback.from_user or not callback.message or not isinstance(callback.message, Message):
@@ -74,10 +33,28 @@ async def show_menu_callback(callback: CallbackQuery, session: AsyncSession, sta
 
     try:
         player = await player_dal.get_player(tg_id)
-        text = get_profile_text(player)
-        await callback.message.edit_text(
-            text, parse_mode="HTML", reply_markup=get_main_menu_keyboard()
+        
+        rep_title = get_reputation_title(cast(int, player.reputation))
+        t_name = get_tavern_name(cast(int, player.reputation))
+        rep_sign = "+" if cast(int, player.reputation) >= 0 else ""
+        
+        text = (
+            f"╔════════[ 🗺️ <b>КАРТА ГОРОДА</b> ]════════╗\n"
+            f"║  🏰 Таверна: <b>«{t_name}»</b>\n"
+            f"║  ⭐ Репутация: <code>{rep_sign}{player.reputation}</code> ({rep_title})\n"
+            f"╚═══════════════════════════════════╝\n\n"
+            f"<i>Вы стоите на рыночной площади. Куда направитесь дальше, мастер?</i>"
         )
+        
+        alerts = await player_dal.get_alerts_summary(cast(int, player.player_id))
+        await send_or_edit_dashboard(
+            bot=callback.bot,
+            player=player,
+            session=session,
+            text=text,
+            reply_markup=get_main_menu_keyboard(alerts)
+        )
+        
     except PlayerNotFoundError:
         await callback.answer("Профиль не найден. Напишите /start", show_alert=True)
 
@@ -87,7 +64,7 @@ async def show_menu_callback(callback: CallbackQuery, session: AsyncSession, sta
 @menu_router.callback_query(F.data == "screen:inventory")
 async def show_inventory(callback: CallbackQuery, session: AsyncSession) -> None:
     """
-    Экран инвентаря игрока.
+    Экран инвентаря игрока (Тёмный Погреб).
     """
     if not callback.from_user or not callback.message or not isinstance(callback.message, Message):
         await callback.answer()
@@ -98,17 +75,19 @@ async def show_inventory(callback: CallbackQuery, session: AsyncSession) -> None
 
     try:
         player = await player_dal.get_player(tg_id)
-        resources = await player_dal.get_resources(int(player.player_id))
+        resources = await player_dal.get_resources(cast(int, player.player_id))
 
         # Получаем бочки на складе
         stmt = select(Batch).where(
-            Batch.player_id == int(player.player_id), Batch.quantity_barrels > 0
+            Batch.player_id == cast(int, player.player_id),
+            Batch.quantity_barrels > 0,
+            Batch.is_completed.is_(True),
         )
         res = await session.execute(stmt)
         batches = res.scalars().all()
 
         text = (
-            f"🎒 <b>Ваш инвентарь</b>\n"
+            f"🏺 <b>Тёмный Погреб (Склад)</b>\n"
             f"<code>┌────────────────────────────</code>\n"
             f"🌾 <b>Солод:</b> <code>{resources.get('malt', Decimal('0')):.1f} кг</code>\n"
             f"💧 <b>Вода:</b> <code>{resources.get('water', Decimal('0')):.1f} л</code>\n"
@@ -117,49 +96,75 @@ async def show_inventory(callback: CallbackQuery, session: AsyncSession) -> None
             f"<code>└────────────────────────────</code>\n\n"
         )
 
+        builder = InlineKeyboardBuilder()
+
         if batches:
             text += "🍺 <b>Бочки готового пива на складе:</b>\n"
+            seen_recipes = set()
             for b in batches:
                 # Попробуем загрузить рецепт
-                from src.database.models import Recipe
-                stmt_recipe = select(Recipe).where(Recipe.recipe_id == int(b.recipe_id))
+                stmt_recipe = select(Recipe).where(Recipe.recipe_id == cast(int, b.recipe_id))
                 recipe_res = await session.execute(stmt_recipe)
                 recipe = recipe_res.scalar_one_or_none()
                 recipe_title = str(recipe.title) if recipe else "Неизвестное пиво"
+                
+                # Проверим, есть ли патент для этого рецепта
+                stmt_pat = select(Patent).where(
+                    Patent.recipe_id == cast(int, b.recipe_id),
+                    Patent.player_id == cast(int, player.player_id),
+                    Patent.is_active.is_(True)
+                )
+                pat_res = await session.execute(stmt_pat)
+                patent = pat_res.scalar_one_or_none()
+                
+                display_title = recipe_title
+                if patent and patent.lore_name:
+                    display_title = patent.lore_name
+
                 text += (
-                    f"• <b>«{html.quote(recipe_title)}»</b> — <code>{b.quantity_barrels} шт.</code>\n"
+                    f"• <b>«{html.quote(cast(str, display_title))}»</b> — <code>{b.quantity_barrels} шт.</code>\n"
                     f"  (Качество: <code>{b.quality_modifier:.2f}x</code>)\n"
                 )
+                
+                # Добавляем кнопку осмотра патента, если есть заполненный лор/название
+                if patent and patent.patent_id not in seen_recipes:
+                    seen_recipes.add(patent.patent_id)
+                    builder.row(
+                        InlineKeyboardButton(
+                            text=f"🔍 Осмотреть «{display_title}»",
+                            callback_data=f"patent:examine:{patent.patent_id}"
+                        )
+                    )
         else:
             text += "🍺 На складе пока нет готового пива.\n"
 
-        # Клавиатура
-        builder = InlineKeyboardBuilder()
-        builder.row(
-            InlineKeyboardButton(
-                text="🛒 Купить сырье (100 gold)",
-                callback_data="inventory:buy_resources",
-            )
-        )
-        builder.row(
-            InlineKeyboardButton(
-                text="🔙 Назад в меню", callback_data="screen:menu"
-            )
-        )
+        # Если предыдущее сообщение было фото (например, при просмотре патента),
+        # мы должны принудительно отправить новое текстовое сообщение
+        force_new = False
+        if callback.message and (callback.message.photo or callback.message.document):
+            force_new = True
 
-        await callback.message.edit_text(
-            text, parse_mode="HTML", reply_markup=builder.as_markup()
+        await send_or_edit_dashboard(
+            bot=callback.bot,
+            player=player,
+            session=session,
+            text=text,
+            reply_markup=add_global_navigation_footer(builder.as_markup()),
+            force_new=force_new
         )
+        
     except PlayerNotFoundError:
         await callback.answer("Профиль не найден. Напишите /start", show_alert=True)
 
     await callback.answer()
 
 
-@menu_router.callback_query(F.data == "inventory:buy_resources")
-async def buy_resources_callback(callback: CallbackQuery, session: AsyncSession) -> None:
+@menu_router.callback_query(F.data == "inventory:collect_ready")
+async def collect_ready_batches_callback(
+    callback: CallbackQuery, session: AsyncSession, state: FSMContext
+) -> None:
     """
-    Обработчик покупки пакета ресурсов.
+    Собирает созревшие партии пива на склад.
     """
     if not callback.from_user or not callback.message or not isinstance(callback.message, Message):
         await callback.answer()
@@ -170,17 +175,258 @@ async def buy_resources_callback(callback: CallbackQuery, session: AsyncSession)
 
     try:
         player = await player_dal.get_player(tg_id)
-        # Стоимость пакета: 100 gold, количество: 50 шт
-        await player_dal.buy_resources_pack(
-            int(player.player_id), cost=Decimal("100.00"), amount=Decimal("50.00")
+        result = await player_dal.collect_ready_batches(cast(int, player.player_id))
+        if result["batches"] == 0:
+            if player.tutorial_step == 1:
+                # Проверим, есть ли вообще партии у игрока в базе
+                stmt = select(func.count(Batch.batch_id)).where(Batch.player_id == cast(int, player.player_id))
+                res_count = await session.execute(stmt)
+                total_batches = res_count.scalar_one_or_none() or 0
+                
+                if total_batches > 0:
+                    # Игрок уже собрал пиво ранее. Переводим на шаг 2.
+                    await player_dal.update_tutorial_step(tg_id, 2)
+                    await state.set_state(TutorialStates.first_sell)
+                    builder = InlineKeyboardBuilder()
+                    builder.row(InlineKeyboardButton(text="⚖️ Торговая площадь", callback_data="screen:market"))
+                    await send_or_edit_dashboard(
+                        bot=callback.bot,
+                        player=player,
+                        session=session,
+                        text="🏺 <b>Пиво на складе!</b>\n\n"
+                             "Пора выходить на рынок. Отправляйся на Торговую площадь.",
+                        reply_markup=builder.as_markup()
+                    )
+                    await callback.answer("Пиво уже собрано!")
+                    return
+                else:
+                    # Партий вообще нет. Сбрасываем обучение на шаг 0, чтобы игрок мог сварить заново.
+                    await player_dal.update_tutorial_step(tg_id, 0)
+                    await state.clear()
+                    try:
+                        await callback.message.delete()
+                    except Exception:
+                        pass
+                    if player.hud_message_id:
+                        player.hud_message_id = None
+                        session.add(player)
+                        await session.flush()
+                    await callback.bot.send_message(
+                        chat_id=callback.message.chat.id,
+                        text="📜 <b>Обучение сброшено!</b>\n\n"
+                             "Кажется, ваша первая варка была утеряна. Напишите /start, чтобы начать обучение заново.",
+                        parse_mode="HTML"
+                    )
+                    await callback.answer("Обучение сброшено!")
+                    return
+
+            await callback.answer("Готовых партий для сбора нет.", show_alert=True)
+            return
+
+        if player.tutorial_step == 1:
+            await player_dal.update_tutorial_step(tg_id, 2)
+            await state.set_state(TutorialStates.first_sell)
+
+        builder = InlineKeyboardBuilder()
+        builder.row(InlineKeyboardButton(text="🏺 Открыть погреб", callback_data="screen:inventory"))
+
+        await send_or_edit_dashboard(
+            bot=callback.bot,
+            player=player,
+            session=session,
+            text=f"🟢 <b>Пиво собрано!</b>\n\n"
+                 f"В погреб перенесено партий: <code>{result['batches']}</code>\n"
+                 f"Всего бочек: <code>{result['barrels']}</code>",
+            reply_markup=add_global_navigation_footer(builder.as_markup()),
         )
-        await callback.answer("🎒 Ресурсы успешно куплены! (+50 каждого вида)", show_alert=True)
-        # Перерисовываем экран инвентаря
-        await show_inventory(callback, session)
+        await callback.answer("Пиво собрано!")
+        
+    except PlayerNotFoundError:
+        await callback.answer("Профиль не найден. Напишите /start", show_alert=True)
+
+
+@menu_router.callback_query(F.data == "screen:chronicle")
+async def show_chronicle(callback: CallbackQuery, session: AsyncSession) -> None:
+    """
+    Экран "Летопись Мастера" (профиль игрока с логом событий).
+    """
+    if not callback.from_user or not callback.message or not isinstance(callback.message, Message):
+        await callback.answer()
+        return
+
+    tg_id = callback.from_user.id
+    player_dal = PlayerDAL(session)
+
+    try:
+        player = await player_dal.get_player(tg_id)
+        rep_title = get_reputation_title(cast(int, player.reputation))
+        
+        # Получаем последние 5 событий
+        recent_events = await player_dal.get_recent_events(cast(int, player.player_id), limit=5)
+        events_text = ""
+        if recent_events:
+            for ev in recent_events:
+                created_str = ev.created_at.strftime("%H:%M")
+                events_text += f"• <code>[{created_str}]</code> {ev.summary}\n"
+        else:
+            events_text = "• <i>Летопись пока чиста... Сварите первую партию!</i>\n"
+
+        # Варок проведено
+        stmt_brews = select(func.count(Batch.batch_id)).where(Batch.player_id == cast(int, player.player_id))
+        brews_res = await session.execute(stmt_brews)
+        total_brews = brews_res.scalar_one_or_none() or 0
+
+        # Бочек продано
+        stmt_sales = select(func.sum(TransactionLog.volume)).where(TransactionLog.seller_id == cast(int, player.player_id))
+        sales_res = await session.execute(stmt_sales)
+        total_sales = sales_res.scalar_one_or_none() or 0
+
+        # Активных патентов
+        stmt_patents = select(func.count(Patent.patent_id)).where(
+            Patent.player_id == cast(int, player.player_id), Patent.is_active.is_(True)
+        )
+        patents_res = await session.execute(stmt_patents)
+        total_patents = patents_res.scalar_one_or_none() or 0
+
+        # Ранг таверны
+        tavern_levels = {
+            "garage": "Гараж (уровень 1)",
+            "tavern": "Таверна (уровень 2)",
+            "brewery": "Пивоварня (уровень 3)",
+            "factory": "Завод (уровень 4)",
+            "guild": "Гильдия Пивоваров (уровень 5)",
+        }
+        rank_str = tavern_levels.get(player.tavern_level.value, "Неизвестно")
+
+        # Рисуем полосы прогресса (0-10 делений)
+        rep_normalized = max(-100, min(100, cast(int, player.reputation)))
+        rep_pct = int((rep_normalized + 100) / 20)
+        rep_bar = "█" * rep_pct + "░" * (10 - rep_pct)
+
+        inf_normalized = max(0, min(100, cast(int, player.influence)))
+        inf_pct = int(inf_normalized / 10)
+        inf_bar = "█" * inf_pct + "░" * (10 - inf_pct)
+
+        user_name = callback.from_user.full_name
+
+        text = (
+            f"📜 <b>ЛЕТОПИСЬ МАСТЕРА — {html.quote(user_name)}</b>\n\n"
+            f"⚔️ <b>Ранг таверны:</b>  <code>{rank_str}</code>\n"
+            f"💰 <b>Золото:</b>        <code>{player.gold:.2f} g</code>\n"
+            f"⭐ <b>Репутация:</b>     <code>{player.reputation:+.0f}</code>  <code>[{rep_bar}]</code> {rep_title}\n"
+            f"👑 <b>Влияние:</b>       <code>{player.influence}</code>  <code>[{inf_bar}]</code>\n"
+            f"💎 <b>Кристаллы:</b>     <code>{player.prestige_crystals}</code>\n\n"
+            f"🍺 <b>Варок проведено:</b>    <code>{total_brews}</code>\n"
+            f"📦 <b>Бочек продано:</b>      <code>{total_sales}</code>\n"
+            f"📜 <b>Активных патентов:</b>  <code>{total_patents}</code>\n\n"
+            f"✍️ <b>ПОСЛЕДНИЕ СОБЫТИЯ:</b>\n"
+            f"{events_text}\n"
+        )
+
+        builder = InlineKeyboardBuilder()
+
+        await send_or_edit_dashboard(
+            bot=callback.bot,
+            player=player,
+            session=session,
+            text=text,
+            reply_markup=add_global_navigation_footer(builder.as_markup()),
+        )
+        
     except PlayerNotFoundError:
         await callback.answer("Профиль не найден.", show_alert=True)
-    except Exception:
-        await callback.answer("❌ Ошибка покупки: Недостаточно золота!", show_alert=True)
+
+    await callback.answer()
+
+
+@menu_router.callback_query(F.data.startswith("patent:examine:"))
+async def examine_patent_callback(callback: CallbackQuery, session: AsyncSession) -> None:
+    """
+    Обработчик просмотра деталей патента (лор + статы + картинка).
+    """
+    if not callback.from_user or not callback.message or not isinstance(callback.message, Message) or not callback.data:
+        await callback.answer()
+        return
+
+    patent_id = int(callback.data.split(":")[2])
+    stmt = select(Patent).where(Patent.patent_id == patent_id)
+    res = await session.execute(stmt)
+    patent = res.scalar_one_or_none()
+
+    if not patent:
+        await callback.answer("Патент не найден.", show_alert=True)
+        return
+
+    # Загружаем рецепт
+    stmt_recipe = select(Recipe).where(Recipe.recipe_id == patent.recipe_id)
+    recipe_res = await session.execute(stmt_recipe)
+    recipe = recipe_res.scalar_one_or_none()
+
+    recipe_title = recipe.title if recipe else "Неизвестный рецепт"
+    lore_name = patent.lore_name or recipe_title
+    lore_text = patent.lore_text or "Описание этого легендарного напитка утеряно..."
+
+    if recipe:
+        strength_val = f"{recipe.strength:.1f}%"
+        bitterness_val = f"{recipe.bitterness:.1f} IBU"
+        aroma_val = f"{recipe.aroma:.1f}"
+        stability_val = f"{recipe.stability}%"
+    else:
+        strength_val = "0.0%"
+        bitterness_val = "0.0 IBU"
+        aroma_val = "0.0"
+        stability_val = "0%"
+
+    caption = (
+        f"📜 <b>ПАТЕНТ: «{html.quote(cast(str, lore_name))}»</b>\n"
+        f"<code>┌────────────────────────────</code>\n"
+        f"💪 Крепость: <code>{strength_val}</code>\n"
+        f"⚡ Горечь: <code>{bitterness_val}</code>\n"
+        f"👃 Аромат: <code>{aroma_val}</code>\n"
+        f"🛡️ Стабильность: <code>{stability_val}</code>\n"
+        f"<code>└────────────────────────────</code>\n\n"
+        f"<i>{html.quote(cast(str, lore_text))}</i>"
+    )
+
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="❌ Закрыть", callback_data="screen:inventory"))
+
+    if patent.card_image_file_id:
+        try:
+            new_msg = await callback.message.answer_photo(
+                photo=cast(str, patent.card_image_file_id),
+                caption=caption,
+                parse_mode="HTML",
+                reply_markup=builder.as_markup()
+            )
+            try:
+                await callback.message.delete()
+            except Exception:
+                pass
+            player.hud_message_id = new_msg.message_id
+            session.add(player)
+            await session.flush()
+        except Exception:
+            # Если отправка фото не сработала, обновим текстом в дашборде
+            player = await PlayerDAL(session).get_player(callback.from_user.id)
+            await send_or_edit_dashboard(
+                bot=callback.bot,
+                player=player,
+                session=session,
+                text=caption,
+                reply_markup=builder.as_markup()
+            )
+    else:
+        player = await PlayerDAL(session).get_player(callback.from_user.id)
+        await send_or_edit_dashboard(
+            bot=callback.bot,
+            player=player,
+            session=session,
+            text=caption,
+            reply_markup=builder.as_markup()
+        )
+
+    await callback.answer()
 
 
 @menu_router.callback_query(F.data == "screen:staff")
@@ -197,7 +443,7 @@ async def show_staff(callback: CallbackQuery, session: AsyncSession) -> None:
 
     try:
         player = await player_dal.get_player(tg_id)
-        staff_list = await player_dal.get_player_staff(int(player.player_id))
+        staff_list = await player_dal.get_player_staff(cast(int, player.player_id))
 
         text = "👥 <b>Управление персоналом</b>\n\n"
 
@@ -212,7 +458,7 @@ async def show_staff(callback: CallbackQuery, session: AsyncSession) -> None:
 
                 role_ru = {
                     "master_alchemist": "🧙‍♂️ Мастер-алхимик",
-                    "caravaner": "⛵ Caravaner",
+                    "caravaner": "⛵ Караванщик",
                     "merchant": "💼 Торговец",
                 }.get(str(s.role.value), str(s.role.value))
 
@@ -231,8 +477,7 @@ async def show_staff(callback: CallbackQuery, session: AsyncSession) -> None:
 
                 text += "\n"
 
-                # Если сотрудник устал, добавляем кнопку отдыха
-                if int(s.fatigue) > 0 and status_val != "dead":
+                if cast(int, s.fatigue) > 0 and status_val != "dead":
                     builder.row(
                         InlineKeyboardButton(
                             text=f"💤 Отправить отдыхать {s.name}",
@@ -247,15 +492,15 @@ async def show_staff(callback: CallbackQuery, session: AsyncSession) -> None:
                 text="🤝 Нанять сотрудника (300 gold)", callback_data="staff:recruit"
             )
         )
-        builder.row(
-            InlineKeyboardButton(
-                text="🔙 Назад в меню", callback_data="screen:menu"
-            )
-        )
 
-        await callback.message.edit_text(
-            text, parse_mode="HTML", reply_markup=builder.as_markup()
+        await send_or_edit_dashboard(
+            bot=callback.bot,
+            player=player,
+            session=session,
+            text=text,
+            reply_markup=add_global_navigation_footer(builder.as_markup(), back_callback="screen:tavern"),
         )
+        
     except PlayerNotFoundError:
         await callback.answer("Профиль не найден. Напишите /start", show_alert=True)
 
@@ -264,9 +509,6 @@ async def show_staff(callback: CallbackQuery, session: AsyncSession) -> None:
 
 @menu_router.callback_query(F.data.startswith("staff:rest:"))
 async def rest_staff(callback: CallbackQuery, session: AsyncSession) -> None:
-    """
-    Обработчик отправки сотрудника на отдых.
-    """
     if not callback.message or not isinstance(callback.message, Message) or not callback.data:
         await callback.answer()
         return
@@ -288,9 +530,6 @@ async def rest_staff(callback: CallbackQuery, session: AsyncSession) -> None:
 
 @menu_router.callback_query(F.data == "staff:recruit")
 async def recruit_staff(callback: CallbackQuery, session: AsyncSession) -> None:
-    """
-    Обработчик найма нового сотрудника.
-    """
     if not callback.from_user or not callback.message or not isinstance(callback.message, Message):
         await callback.answer()
         return
@@ -301,10 +540,8 @@ async def recruit_staff(callback: CallbackQuery, session: AsyncSession) -> None:
     try:
         player = await player_dal.get_player(tg_id)
 
-        # Списываем 300 золота за найм
-        await player_dal.change_gold(int(player.player_id), Decimal("-300.00"))
+        await player_dal.change_gold(cast(int, player.player_id), Decimal("-300.00"))
 
-        # Генерируем случайного сотрудника
         names = ["Бертранд", "Олаф", "Фридрих", "Ульрих", "Сигурд", "Торвальд", "Гуннар", "Альрик"]
         roles = ["master_alchemist", "caravaner", "merchant"]
 
@@ -312,13 +549,22 @@ async def recruit_staff(callback: CallbackQuery, session: AsyncSession) -> None:
         role = random.choice(roles)
         skill = random.randint(20, 60)
 
-        await player_dal.create_staff(int(player.player_id), name, role, skill)
+        await player_dal.create_staff(cast(int, player.player_id), name, role, skill)
 
         role_ru = {
             "master_alchemist": "Мастер-алхимик",
             "caravaner": "Караванщик",
             "merchant": "Торговец",
         }.get(role, role)
+
+        # Записываем событие найма
+        summary = f"Нанял сотрудника: {name} ({role_ru}, навык {skill}/100)"
+        await player_dal.log_player_event(
+            player_id=cast(int, player.player_id),
+            event_type="recruit_staff",
+            summary=summary,
+            metadata={"name": name, "role": role, "skill": skill}
+        )
 
         await callback.answer(
             f"🤝 Успешно нанят новый сотрудник!\n"

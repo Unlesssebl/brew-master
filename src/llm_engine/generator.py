@@ -1,12 +1,12 @@
 import json
 import logging
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, cast
 
 from pydantic import ValidationError
 
-from src.llm_engine.prompts import build_event_prompt
-from src.llm_engine.schemas import GameEvent, get_fallback_event
+from src.llm_engine.prompts import build_event_prompt, build_patent_lore_prompt
+from src.llm_engine.schemas import GameEvent, get_fallback_event, PatentLore, get_fallback_patent_lore
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ class LLMEventGenerator:
         """
         if call_llm_api is None:
             from src.llm_engine.api_client import call_llm_api as default_call
-            self._call_llm_api = default_call
+            self._call_llm_api: Callable[[str], Awaitable[str]] = cast(Callable[[str], Awaitable[str]], default_call)
         else:
             self._call_llm_api = call_llm_api
 
@@ -68,3 +68,69 @@ class LLMEventGenerator:
                     return get_fallback_event()
 
         return get_fallback_event()
+
+
+class LLMPatentLoreGenerator:
+    """
+    Класс для генерации поэтичного лора и фэнтезийного названия рецепта пива.
+    """
+
+    def __init__(self, call_llm_api: Callable[[str], Awaitable[str]] | None = None) -> None:
+        """
+        Инициализация генератора.
+        """
+        if call_llm_api is None:
+            from src.llm_engine.api_client import call_llm_api as default_call
+            self._call_llm_api: Callable[[str], Awaitable[str]] = cast(Callable[[str], Awaitable[str]], default_call)
+        else:
+            self._call_llm_api = call_llm_api
+
+    async def generate_patent_lore(
+        self, recipe_stats: dict[str, Any], player_history: list[str], style: str = "пиво"
+    ) -> PatentLore:
+        """
+        Генерирует лор патента:
+        - Строит промпт на основе рецепта и истории игрока.
+        - Вызывает LLM API (до 3 попыток).
+        - Парсит и валидирует ответ через PatentLore.
+        - При ошибке возвращает fallback.
+        """
+        prompt = build_patent_lore_prompt(recipe_stats, player_history)
+        max_attempts = 3
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                response = await self._call_llm_api(prompt)
+                # Очистим возможную обертку markdown (на всякий случай)
+                if response.strip().startswith("```"):
+                    lines = response.strip().splitlines()
+                    if lines[0].startswith("```"):
+                        lines = lines[1:]
+                    if lines[-1].startswith("```"):
+                        lines = lines[:-1]
+                    response = "\n".join(lines).strip()
+                
+                lore = PatentLore.model_validate_json(response)
+                return lore
+            except (ValidationError, json.JSONDecodeError) as e:
+                logger.warning(
+                    f"Попытка {attempt}/{max_attempts} генерации лора не удалась из-за ошибки валидации/парсинга: {e}"
+                )
+                if attempt == max_attempts:
+                    logger.critical(
+                        "Все попытки генерации лора через LLM завершились сбоем. Применение fallback.",
+                        exc_info=True,
+                    )
+                    return get_fallback_patent_lore(style)
+            except Exception as e:
+                logger.error(
+                    f"Попытка {attempt}/{max_attempts} генерации лора завершилась ошибкой API: {e}"
+                )
+                if attempt == max_attempts:
+                    logger.critical(
+                        "Все попытки генерации лора завершились критической системной ошибкой. Применение fallback.",
+                        exc_info=True,
+                    )
+                    return get_fallback_patent_lore(style)
+
+        return get_fallback_patent_lore(style)

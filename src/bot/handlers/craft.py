@@ -12,8 +12,11 @@ from src.database.dal import (
     PlayerNotFoundError,
 )
 from src.database.models import Player, Staff, StaffRole
+from src.bot.keyboards.inline import get_brewing_keyboard, add_global_navigation_footer
 from src.bot.states import BrewingStates
-from .brewing import make_progress_bar, make_stat_bar, get_crafting_text, get_brewing_keyboard
+from .brewing import make_progress_bar, make_stat_bar, get_crafting_text
+from src.bot.utils.hud import send_or_edit_dashboard
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 craft_router = Router()
 
@@ -64,10 +67,14 @@ async def cmd_brew(
         await state.update_data(malt=25, water=25, hop=25, yeast=25)
 
         text = get_crafting_text(25, 25, 25, 25)
-        await message.answer(
-            text,
-            parse_mode="HTML",
-            reply_markup=get_brewing_keyboard(25, 25, 25, 25),
+        player = await player_dal.get_player(tg_id)
+        await send_or_edit_dashboard(
+            bot=message.bot,
+            player=player,
+            session=session,
+            text=text,
+            reply_markup=add_global_navigation_footer(get_brewing_keyboard(25, 25, 25, 25), back_callback="screen:brewery_hall"),
+            force_new=True
         )
         return
 
@@ -187,4 +194,13 @@ async def cmd_brew(
         f"🛡️ Стабильность: <b>{recipe_stability}/100</b>\n"
         f"<code>[{make_progress_bar(recipe_stability)}]</code>\n"
     )
-    await message.answer(text, parse_mode="HTML")
+    
+    builder = InlineKeyboardBuilder()
+    await send_or_edit_dashboard(
+        bot=message.bot,
+        player=player,
+        session=session,
+        text=text,
+        reply_markup=add_global_navigation_footer(builder.as_markup(), back_callback="screen:brewery_hall"),
+        force_new=True
+    )

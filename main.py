@@ -10,6 +10,7 @@ from src.llm_engine import LLMEventGenerator
 from src.workers.queue_worker import run_queue_worker
 from src.workers.rival_ceo import run_rival_ceo_worker
 from src.workers.royalty import run_royalty_worker
+from src.workers.market_prices import run_market_prices_worker
 
 # Setup logging configuration
 logging.basicConfig(
@@ -47,6 +48,7 @@ async def main() -> None:
             run_queue_worker(async_session_factory, llm_generator),
             run_royalty_worker(async_session_factory),
             run_rival_ceo_worker(async_session_factory),
+            run_market_prices_worker(async_session_factory),
         )
     except asyncio.CancelledError:
         logger.info("Получен сигнал отмены. Завершение работы...")

@@ -60,3 +60,18 @@ def get_fallback_event() -> GameEvent:
             )
         ],
     )
+
+
+class PatentLore(BaseModel):
+    name: str = Field(..., max_length=40)
+    lore: str = Field(..., max_length=300)
+
+
+def get_fallback_patent_lore(style: str = "пиво") -> PatentLore:
+    """
+    Возвращает безопасный дефолтный объект PatentLore при отказе LLM.
+    """
+    return PatentLore(
+        name=f"Безымянное {style}",
+        lore="История этого напитка окутана туманом неизвестности. Летописец пивной гильдии, похоже, заснул в кружке эля...",
+    )

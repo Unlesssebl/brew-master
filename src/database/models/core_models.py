@@ -13,7 +13,9 @@ from sqlalchemy import (
     Numeric,
     SmallInteger,
     String,
+    JSON,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import ENUM as PG_ENUM
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -58,6 +60,7 @@ class Player(Base):
 
     player_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     tg_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=False)
+    hud_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, default=None)
     gold: Mapped[Decimal] = mapped_column(
         Numeric(15, 2), nullable=False, default=Decimal("1000.00")
     )
@@ -68,6 +71,12 @@ class Player(Base):
         PG_ENUM(TavernTier, name="tavern_tier", schema="core"),
         nullable=False,
         default=TavernTier.garage,
+    )
+    tutorial_step: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
     )
     last_offline_calc_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -161,3 +170,27 @@ class Resource(Base):
 
     # Relationships
     player: Mapped["Player"] = relationship(back_populates="resources")
+
+
+class PlayerEventLog(Base):
+    __tablename__ = "player_events_log"
+    __table_args__ = (
+        Index("idx_player_events_player_id", "player_id"),
+        {"schema": "core"},
+    )
+
+    log_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    player_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("core.players.player_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    event_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    summary: Mapped[str] = mapped_column(String(500), nullable=False)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    # Relationships
+    player: Mapped["Player"] = relationship()

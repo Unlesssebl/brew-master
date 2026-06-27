@@ -32,12 +32,25 @@ CREATE TABLE core.players (
     reputation SMALLINT NOT NULL DEFAULT 0 CONSTRAINT chk_player_reputation CHECK (reputation BETWEEN -100 AND 100),
     influence SMALLINT NOT NULL DEFAULT 0 CONSTRAINT chk_player_influence CHECK (influence BETWEEN 0 AND 100),
     tavern_level core.tavern_tier NOT NULL DEFAULT 'garage',
+    hud_message_id BIGINT DEFAULT NULL, -- ID активного сообщения дашборда (SPA) в Telegram
     
     last_offline_calc_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX idx_players_tg_id ON core.players(tg_id);
+
+-- Таблица журнала событий игрока (PlayerEventLog)
+CREATE TABLE core.player_events_log (
+    event_id BIGSERIAL PRIMARY KEY,
+    player_id BIGINT NOT NULL REFERENCES core.players(player_id) ON DELETE CASCADE,
+    event_type VARCHAR(50) NOT NULL, -- 'serial_brew', 'patent_registered', 'pvp_success', etc.
+    summary TEXT NOT NULL,
+    metadata_json JSONB,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_player_events_log_player_id ON core.player_events_log(player_id);
 
 -- Таблица нанятых сотрудников
 CREATE TABLE core.staff (
@@ -100,6 +113,9 @@ CREATE TABLE crafting.patents (
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     daily_tax_base NUMERIC(10, 2) NOT NULL DEFAULT 50.00,
     royalty_earned_24h NUMERIC(15, 2) NOT NULL DEFAULT 0.00,
+    lore_name VARCHAR(150) DEFAULT NULL, -- Название, сгенерированное LLM
+    lore_text TEXT DEFAULT NULL, -- Художественный лор, сгенерированный LLM
+    card_image_file_id VARCHAR(255) DEFAULT NULL, -- Telegram file_id обложки патента
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     expires_at TIMESTAMP WITH TIME ZONE NOT NULL
 );
@@ -135,6 +151,14 @@ CREATE TABLE economy.transactions_log (
     total_revenue NUMERIC(15, 2) NOT NULL,
     processed_for_royalty BOOLEAN NOT NULL DEFAULT FALSE, 
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Таблица текущих рыночных цен сырья (Плавающие цены)
+CREATE TABLE economy.ingredient_prices (
+    ingredient VARCHAR(20) PRIMARY KEY, -- 'malt', 'water', 'hops', 'yeast'
+    price NUMERIC(15, 2) NOT NULL,
+    trend SMALLINT NOT NULL DEFAULT 0, -- -1 (падающий), 0 (стабильный), 1 (растущий)
+    last_updated TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
 -- Агрегированные данные о продажах за 24 часа (для расчета D_penalty)
