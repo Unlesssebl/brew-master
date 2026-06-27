@@ -1,4 +1,5 @@
 import asyncio
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -43,20 +44,17 @@ async def test_queue_worker_success():
 
     original_sleep = asyncio.sleep
 
-    async def mock_sleep(delay):
+    async def mock_sleep(delay: float, result: Any = None) -> Any:
         if delay == 5:  # Это значит, что задача не найдена
             raise asyncio.CancelledError()
-        await original_sleep(delay)
+        return await original_sleep(delay, result)
 
-    asyncio.sleep = mock_sleep
-
-    try:
-        mock_bot = AsyncMock()
-        await run_queue_worker(session_maker, llm_generator, mock_bot)
-    except asyncio.CancelledError:
-        pass
-    finally:
-        asyncio.sleep = original_sleep
+    with patch("asyncio.sleep", new=mock_sleep):
+        try:
+            mock_bot = AsyncMock()
+            await run_queue_worker(session_maker, llm_generator, mock_bot)
+        except asyncio.CancelledError:
+            pass
 
     QueueDAL.fetch_next_task.assert_called()
     llm_generator.generate_event.assert_called_once_with({"tg_id": 12345})
@@ -81,23 +79,18 @@ async def test_royalty_worker_iteration():
     )
     EconomyDAL.mark_transactions_processed = AsyncMock()
 
-    original_sleep = asyncio.sleep
-
-    async def mock_sleep(delay):
+    async def mock_sleep(delay: float, result: Any = None) -> Any:
         raise asyncio.CancelledError()
 
-    asyncio.sleep = mock_sleep
+    with patch("asyncio.sleep", new=mock_sleep):
+        with patch("src.workers.royalty.PlayerDAL") as mock_player_dal_class:
+            mock_p_dal = mock_player_dal_class.return_value
+            mock_p_dal.change_gold = AsyncMock()
 
-    with patch("src.workers.royalty.PlayerDAL") as mock_player_dal_class:
-        mock_p_dal = mock_player_dal_class.return_value
-        mock_p_dal.change_gold = AsyncMock()
-
-        try:
-            await run_royalty_worker(session_maker)
-        except asyncio.CancelledError:
-            pass
-        finally:
-            asyncio.sleep = original_sleep
+            try:
+                await run_royalty_worker(session_maker)
+            except asyncio.CancelledError:
+                pass
 
         mock_player_dal_class.assert_called_once_with(session)
         # Ожидаемый налог: 50 + 100 * 0.15 = 65
