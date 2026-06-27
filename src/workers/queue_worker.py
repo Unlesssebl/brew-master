@@ -1,6 +1,9 @@
 import asyncio
 import logging
 
+from aiogram import Bot
+from aiogram.types import InlineKeyboardButton
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from src.database.dal import QueueDAL
@@ -10,12 +13,15 @@ logger = logging.getLogger(__name__)
 
 
 async def run_queue_worker(
-    session_maker: async_sessionmaker, llm_generator: LLMEventGenerator
+    session_maker: async_sessionmaker,
+    llm_generator: LLMEventGenerator,
+    bot: Bot,
 ) -> None:
     """
     Асинхронный воркер для обработки задач из очереди.
     Слушает задачи типа 'llm_event', генерирует события с помощью LLM
     и создает новые задачи 'bot_dispatch' для отправки игрокам.
+    А также отправляет квесты ('bot_dispatch') пользователям в Telegram.
     """
     logger.info("Queue worker started.")
     while True:
@@ -48,6 +54,51 @@ async def run_queue_worker(
                         )
                         await QueueDAL.complete_task(session, task.task_id, success=True)
                         await session.commit()
+
+                elif task.task_type == "bot_dispatch":
+                    # Отправляем сообщение пользователю в Telegram
+                    tg_id = task.payload.get("tg_id")
+                    if not tg_id:
+                        logger.error(f"Task {task.task_id} of type 'bot_dispatch' has no tg_id in payload.")
+                        async with session_maker() as session:
+                            await QueueDAL.complete_task(session, task.task_id, success=False)
+                            await session.commit()
+                        continue
+
+                    event_title = task.payload.get("event_title", "Случайное событие")
+                    event_description = task.payload.get("event_description", "")
+                    choices = task.payload.get("choices", [])
+
+                    text = f"🎭 <b>{event_title}</b>\n\n{event_description}"
+
+                    builder = InlineKeyboardBuilder()
+                    for choice in choices:
+                        choice_id = choice.get("choice_id")
+                        button_text = choice.get("button_text", "Выбрать")
+                        # Формируем callback_data: llm_c:{task_id}:{choice_id}
+                        callback_data = f"llm_c:{task.task_id}:{choice_id}"
+                        builder.row(
+                            InlineKeyboardButton(
+                                text=button_text,
+                                callback_data=callback_data
+                            )
+                        )
+
+                    try:
+                        await bot.send_message(
+                            chat_id=int(tg_id),
+                            text=text,
+                            reply_markup=builder.as_markup(),
+                        )
+                        async with session_maker() as session:
+                            await QueueDAL.complete_task(session, task.task_id, success=True)
+                            await session.commit()
+                    except Exception as tg_e:
+                        logger.error(f"Failed to send Telegram message for task {task.task_id}: {tg_e}")
+                        async with session_maker() as session:
+                            await QueueDAL.complete_task(session, task.task_id, success=False)
+                            await session.commit()
+
                 else:
                     # Для других типов задач просто завершаем их
                     async with session_maker() as session:

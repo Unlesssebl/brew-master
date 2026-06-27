@@ -15,8 +15,8 @@ from src.core.expeditions import (
     calculate_expedition_outcome,
     calculate_injury_consequences,
 )
-from src.database.dal import PlayerDAL, PlayerNotFoundError
-from src.database.models import Staff, StaffStatus, StaffRole
+from src.database.dal import PlayerDAL, PlayerNotFoundError, QueueDAL
+from src.database.models import Staff, StaffStatus, StaffRole, Task
 from src.llm_engine import LLMEventGenerator
 from src.llm_engine.schemas import EventChoice, GameEvent
 from src.bot.utils.hud import send_or_edit_dashboard
@@ -66,6 +66,149 @@ async def show_expeditions_screen(
         reply_markup=add_global_navigation_footer(builder.as_markup())
     )
     await callback.answer()
+
+
+@events_router.callback_query(F.data == "event:trigger")
+async def trigger_llm_event(
+    callback: CallbackQuery, session: AsyncSession
+) -> None:
+    """
+    Триггер случайного LLM-события.
+    Создает задачу типа 'llm_event' в очереди.
+    """
+    if not callback.from_user:
+        await callback.answer()
+        return
+
+    tg_id = callback.from_user.id
+
+    # Создаем задачу llm_event в БД
+    await QueueDAL.create_task(
+        session=session,
+        task_type="llm_event",
+        payload={"tg_id": tg_id},
+        target_tg_id=tg_id,
+    )
+    await session.commit()
+
+    await callback.answer(
+        "Запрос отправлен вестникам королевства. Ожидайте новостей!",
+        show_alert=True
+    )
+
+
+@events_router.callback_query(F.data.startswith("llm_c:"))
+async def handle_llm_event_choice(
+    callback: CallbackQuery, session: AsyncSession
+) -> None:
+    """
+    Обрабатывает выбор игрока в LLM-событии.
+    Коллбэк формат: llm_c:{task_id}:{choice_id}
+    """
+    if not callback.from_user or not callback.message or not isinstance(callback.message, Message) or not callback.data:
+        await callback.answer()
+        return
+
+    parts = callback.data.split(":")
+    if len(parts) < 3:
+        await callback.answer("Некорректный запрос.", show_alert=True)
+        return
+
+    task_id = int(parts[1])
+    choice_id = parts[2]
+    tg_id = callback.from_user.id
+
+    # Ищем задачу, из которой был сгенерирован этот квест
+    stmt = select(Task).where(Task.task_id == task_id)
+    res = await session.execute(stmt)
+    task = res.scalar_one_or_none()
+
+    if not task:
+        await callback.answer("Событие не найдено или устарело.", show_alert=True)
+        return
+
+    # Защита от перехвата: проверяем, что задача предназначалась именно этому игроку
+    if int(task.payload.get("tg_id", 0)) != tg_id:
+        await callback.answer("Это событие предназначено не вам!", show_alert=True)
+        return
+
+    # Находим нужный вариант ответа
+    choices = task.payload.get("choices", [])
+    selected_choice = None
+    for choice in choices:
+        if choice.get("choice_id") == choice_id:
+            selected_choice = choice
+            break
+
+    if not selected_choice:
+        await callback.answer("Вариант выбора не найден.", show_alert=True)
+        return
+
+    # Эффекты
+    gold_change = Decimal(str(selected_choice.get("gold_change", 0)))
+    reputation_change = int(selected_choice.get("reputation_change", 0))
+    influence_change = int(selected_choice.get("influence_change", 0))
+    result_text = selected_choice.get("result_text", "Вы сделали выбор.")
+
+    player_dal = PlayerDAL(session)
+    player = await player_dal.get_player(tg_id)
+
+    # Проверяем баланс золота
+    if gold_change < 0 and player.gold < abs(gold_change):
+        await callback.answer("Недостаточно золота для этого выбора!", show_alert=True)
+        return
+
+    # Применяем эффекты к игроку
+    if gold_change != 0:
+        await player_dal.change_gold(int(player.player_id), gold_change)
+    if reputation_change != 0:
+        await player_dal.change_reputation(int(player.player_id), reputation_change)
+    if influence_change != 0:
+        await player_dal.change_influence(int(player.player_id), influence_change)
+
+    # Логируем событие
+    event_title = task.payload.get("event_title", "Случайное событие")
+    await player_dal.log_player_event(
+        player_id=int(player.player_id),
+        event_type="llm_event_choice",
+        summary=f"В событии '{event_title}' выбран вариант: {selected_choice.get('button_text')} ({result_text})",
+        metadata={
+            "task_id": task_id,
+            "choice_id": choice_id,
+            "gold_change": float(gold_change),
+            "reputation_change": reputation_change,
+            "influence_change": influence_change
+        }
+    )
+
+    # Формируем обновленный текст сообщения
+    changes_str = []
+    if gold_change != 0:
+        changes_str.append(f"{'+' if gold_change > 0 else ''}{gold_change} gold")
+    if reputation_change != 0:
+        changes_str.append(f"{'+' if reputation_change > 0 else ''}{reputation_change} репутации")
+    if influence_change != 0:
+        changes_str.append(f"{'+' if influence_change > 0 else ''}{influence_change} влияния")
+
+    effects_desc = f" ({', '.join(changes_str)})" if changes_str else ""
+
+    new_text = (
+        f"🎭 <b>{event_title}</b>\n\n"
+        f"<i>{task.payload.get('event_description')}</i>\n\n"
+        f"📜 <b>Ваш выбор:</b> {selected_choice.get('button_text')}\n"
+        f"👉 <b>Результат:</b> {result_text}<b>{effects_desc}</b>"
+    )
+
+    # Редактируем сообщение, удаляя кнопки
+    await send_or_edit_dashboard(
+        bot=callback.bot,
+        player=player,
+        session=session,
+        text=new_text,
+        reply_markup=add_global_navigation_footer(InlineKeyboardBuilder().as_markup())
+    )
+
+    await callback.answer("Решение принято!")
 
 
 @events_router.callback_query(F.data == "expedition:start")

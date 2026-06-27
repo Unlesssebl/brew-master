@@ -9,13 +9,31 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.dal import PlayerDAL, PlayerNotFoundError, EconomyDAL, InsufficientFundsError
-from src.database.models import Batch, Recipe, IngredientPrice, PlayerEventLog
+from src.database.models import Batch, Recipe, IngredientPrice, PlayerEventLog, MarketSaturation
 from src.bot.utils.hud import send_or_edit_dashboard
 from src.bot.utils.formatters import get_tavern_name
 from src.bot.keyboards.inline import add_global_navigation_footer
 
 logger = logging.getLogger(__name__)
 market_router = Router()
+
+
+async def get_market_penalty(session: AsyncSession, segment: str) -> Decimal:
+    from src.core.economy import calculate_market_saturation_penalty
+    from config import settings
+
+    stmt = select(MarketSaturation.volume_sold_24h).where(MarketSaturation.market_segment == segment)
+    res = await session.execute(stmt)
+    vol = res.scalar_one_or_none()
+    if vol is None:
+        return Decimal("1.0")
+
+    penalty = calculate_market_saturation_penalty(
+        ema_volume_sold=float(vol),
+        threshold=float(settings.GameBalance.market_saturation_threshold),
+        elasticity_lambda=float(settings.GameBalance.market_saturation_lambda)
+    )
+    return Decimal(str(penalty))
 
 
 @market_router.callback_query(F.data == "screen:market")
@@ -306,28 +324,45 @@ async def show_faction_choice(callback: CallbackQuery, session: AsyncSession) ->
                         debuff_multiplier = Decimal("0.5")
                         debuff_alert = "\n⚠️ <b>Внимание:</b> О вашей таверне ходят Грязные слухи! Выручка снижена на 50%.\n"
 
+        # Получаем штрафы за насыщение рынка для сегментов
+        penalty_legal = await get_market_penalty(session, "legal")
+        penalty_grey = await get_market_penalty(session, "grey")
+        penalty_black = await get_market_penalty(session, "black")
+
         # Рассчитываем цены для разных фракций
         # Базовая цена за бочку: 10 gold (итого 100 gold за партию из 10 бочек)
         base_revenue = Decimal(str(batch.quantity_barrels)) * Decimal("10.00")
-        
+
         # 1. Дворфы (legal): коэфф = 1.0 + 0.02 * influence + 0.01 * reputation
         dwarfs_coeff = Decimal("1.0") + Decimal(str(player.influence)) * Decimal("0.02") + Decimal(str(player.reputation)) * Decimal("0.01")
         dwarfs_coeff = max(Decimal("0.5"), dwarfs_coeff)
-        dwarfs_revenue = base_revenue * dwarfs_coeff * batch.quality_modifier * debuff_multiplier
+        dwarfs_revenue = base_revenue * dwarfs_coeff * batch.quality_modifier * debuff_multiplier * penalty_legal
 
         # 2. Эльфы (grey): коэфф = 1.5 + 0.03 * influence - 0.02 * reputation
         elves_coeff = Decimal("1.5") + Decimal(str(player.influence)) * Decimal("0.03") - Decimal(str(player.reputation)) * Decimal("0.02")
         elves_coeff = max(Decimal("0.5"), elves_coeff)
-        elves_revenue = base_revenue * elves_coeff * batch.quality_modifier * debuff_multiplier
+        elves_revenue = base_revenue * elves_coeff * batch.quality_modifier * debuff_multiplier * penalty_grey
 
         # 3. Гоблины (black): коэфф = 0.5 (покупают всё, репутация падает)
-        goblins_revenue = base_revenue * Decimal("0.5") * batch.quality_modifier * debuff_multiplier
+        goblins_revenue = base_revenue * Decimal("0.5") * batch.quality_modifier * debuff_multiplier * penalty_black
+
+        market_alerts = []
+        if penalty_legal < Decimal("1.0"):
+            market_alerts.append(f"• ⛏️ Рынок Дворфов перенасыщен (спрос: {penalty_legal * 100:.0f}%)")
+        if penalty_grey < Decimal("1.0"):
+            market_alerts.append(f"• 🧝 Рынок Эльфов перенасыщен (спрос: {penalty_grey * 100:.0f}%)")
+        if penalty_black < Decimal("1.0"):
+            market_alerts.append(f"• 👺 Черный рынок перенасыщен (спрос: {penalty_black * 100:.0f}%)")
+
+        market_alerts_str = ""
+        if market_alerts:
+            market_alerts_str = "\n⚠️ <b>Предупреждение:</b>\n" + "\n".join(market_alerts) + "\n"
 
         text = (
             f"💰 <b>Выбор покупателя для вашей партии пива</b>\n\n"
             f"Объем партии: <code>{batch.quantity_barrels} бочек</code>\n"
             f"Качество: <code>{batch.quality_modifier:.2f}x</code>\n"
-            f"{debuff_alert}\n"
+            f"{debuff_alert}{market_alerts_str}\n"
             f"Выберите фракцию для заключения контракта:\n\n"
             f"⛏️ <b>Дворфы (Надежный сбыт):</b>\n"
             f"• Цена: <b>{dwarfs_revenue:.1f} gold</b>\n"

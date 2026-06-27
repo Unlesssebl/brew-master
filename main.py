@@ -45,7 +45,7 @@ async def main() -> None:
         # Запуск параллельных задач через gather
         await asyncio.gather(
             dp.start_polling(bot),
-            run_queue_worker(async_session_factory, llm_generator),
+            run_queue_worker(async_session_factory, llm_generator, bot),
             run_royalty_worker(async_session_factory),
             run_rival_ceo_worker(async_session_factory),
             run_market_prices_worker(async_session_factory),

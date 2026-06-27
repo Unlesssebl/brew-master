@@ -51,7 +51,8 @@ async def test_queue_worker_success():
     asyncio.sleep = mock_sleep
 
     try:
-        await run_queue_worker(session_maker, llm_generator)
+        mock_bot = AsyncMock()
+        await run_queue_worker(session_maker, llm_generator, mock_bot)
     except asyncio.CancelledError:
         pass
     finally:
