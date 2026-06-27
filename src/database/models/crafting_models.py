@@ -149,6 +149,7 @@ class Batch(Base):
     )
 
     is_completed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_spoiled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("FALSE"))
     ready_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

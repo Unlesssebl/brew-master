@@ -135,7 +135,7 @@ class EconomyDAL:
 
     @staticmethod
     async def sell_batch(
-        session: AsyncSession, player_id: int, batch_id: int, fraction: str, market_type: str, total_revenue: Decimal
+        session: AsyncSession, player_id: int, batch_id: int, fraction: str, market_type: str, total_revenue: Decimal, volume_to_sell: int | None = None
     ) -> None:
         """
         Продажа готовой партии пива фракции. Списывает бочки готового пива у игрока,
@@ -150,8 +150,11 @@ class EconomyDAL:
         if not batch or batch.quantity_barrels <= 0 or not batch.is_completed:
             raise ValueError("Партия не найдена или уже продана!")
 
-        volume = batch.quantity_barrels
-        batch.quantity_barrels = 0
+        volume = volume_to_sell if volume_to_sell is not None else batch.quantity_barrels
+        if volume > batch.quantity_barrels:
+            raise ValueError("Недостаточно бочек в партии!")
+
+        batch.quantity_barrels -= volume
         session.add(batch)
 
         await player_dal.change_gold(player_id, total_revenue)

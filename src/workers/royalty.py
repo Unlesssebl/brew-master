@@ -89,6 +89,7 @@ async def run_royalty_worker(session_maker: async_sessionmaker) -> None:
                     stmt_spoiled = select(Batch).where(
                         Batch.is_completed == True,
                         Batch.quantity_barrels > 0,
+                        Batch.is_spoiled == False,
                         Batch.ready_at < three_days_ago
                     )
                     res_spoiled = await session.execute(stmt_spoiled)
@@ -113,8 +114,8 @@ async def run_royalty_worker(session_maker: async_sessionmaker) -> None:
                         )
                         session.add(evt_log)
 
-                        # Списываем бочки
-                        b.quantity_barrels = 0
+                        # Отмечаем как брак
+                        b.is_spoiled = True
                         session.add(b)
 
         except Exception as e:

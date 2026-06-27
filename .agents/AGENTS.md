@@ -1,4 +1,4 @@
-# Правила проекта tg-game-pivovar
+# Project Rules
 
 ## ОБЯЗАТЕЛЬНО: Читай документацию перед работой
 
@@ -12,14 +12,13 @@
 
 | Файл | Содержание |
 |------|-----------|
-| [`docs/01_gdd.md`](file:///f:/Work/Projects/brew-master/docs/01_gdd.md) | Game Design Document — механики, геймплей, концепция |
-| [`docs/02_architecture.md`](file:///f:/Work/Projects/brew-master/docs/02_architecture.md) | Архитектура системы — структура проекта, паттерны |
-| [`docs/03_database.md`](file:///f:/Work/Projects/brew-master/docs/03_database.md) | Схема БД — таблицы, связи, поля |
+| [`docs/01_game_design.md`](file:///f:/Work/Projects/brew-master/docs/01_game_design.md) | Game Design Document — механики, геймплей, концепция |
+| [`docs/02_system_architecture.md`](file:///f:/Work/Projects/brew-master/docs/02_system_architecture.md) | Архитектура системы — структура проекта, паттерны |
+| [`docs/03_database_schema.md`](file:///f:/Work/Projects/brew-master/docs/03_database_schema.md) | Схема БД — таблицы, связи, поля |
 | [`docs/04_math_and_economy.md`](file:///f:/Work/Projects/brew-master/docs/04_math_and_economy.md) | Математика и экономика — формулы, балансировка |
-| [`docs/05_ai_pipelines.md`](file:///f:/Work/Projects/brew-master/docs/05_ai_pipelines.md) | AI пайплайны — агенты, процессы |
-| [`docs/06_llm_config.md`](file:///f:/Work/Projects/brew-master/docs/06_llm_config.md) | Конфигурация LLM — настройки генерации и промпты |
-| [`docs/07_telegram_native_game_dev.md`](file:///f:/Work/Projects/brew-master/docs/07_telegram_native_game_dev.md) | База знаний — разработка нативных Telegram-игр (Bot API, лимиты, архитектура) |
-| [`docs/08_native_bot_mechanics.md`](file:///f:/Work/Projects/brew-master/docs/08_native_bot_mechanics.md) | Экстремальные механики на базе новых фичей Telegram (Концепты "Живой таверны", QTE, Реакции) |
+| [`docs/05_llm_integration.md`](file:///f:/Work/Projects/brew-master/docs/05_llm_integration.md) | Интеграция с LLM — промпты, агенты, генерация контента |
+| [`docs/06_telegram_ui_mechanics.md`](file:///f:/Work/Projects/brew-master/docs/06_telegram_ui_mechanics.md) | Telegram UI и механики — Telegram-специфичные фичи, кнопки, интерфейс |
+
 ## ⚠️ Актуальность документации
 
 > [!WARNING]
@@ -33,7 +32,7 @@
 
 > [!CAUTION]
 > **Концепты ≠ Готовый код!**
-> Механики, описанные в `docs/01_gdd.md`, `docs/08_native_bot_mechanics.md` (D-pad, QTE, Социальные Рейды на Реакциях, Анимированные матрицы и т.д.) — это **концепты и планы**. 
+> Механики, описанные в `docs/01_game_design.md` и `docs/06_telegram_ui_mechanics.md` — это **концепты и планы**. 
 > - **НЕ считай их уже реализованными**, пока явно не увидишь реализацию в исходном коде Python.
 > - На данный момент проект находится на стадии PoC (Proof of Concept). Всегда проверяй файлы в папке `scripts/` и основную структуру бота, чтобы понять реальный прогресс.
 
@@ -42,3 +41,7 @@
 1. **Сначала документация** — прочитай релевантные docs перед любой реализацией.
 2. **Следуй спецификации** — реализация должна соответствовать GDD и архитектуре (с учетом поправки на устаревание).
 3. **Обновляй docs** — если что-то меняется или найдена неактуальная информация, смело обновляй соответствующий документ.
+
+## Работа с Базой Данных
+
+- **БЕЗ миграций (Alembic):** Не создавай файлы миграций для базы данных. Проект находится на стадии активной разработки (develop-версия), поэтому можно спокойно вносить изменения в модели и пересобирать БД, даже если это приведет к потере данных. Работай с моделями напрямую без `alembic revision --autogenerate`.
