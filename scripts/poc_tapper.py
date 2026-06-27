@@ -5,8 +5,7 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKe
 from aiogram.filters import Command
 from aiogram.exceptions import TelegramBadRequest
 
-logging.basicConfig(level=logging.INFO)
-BOT_TOKEN = "8891264422:AAHhq1WEI2DwuKDb-eTxeOqmYeoGt3qHnWE"
+from load_env import BOT_TOKEN
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
@@ -59,6 +58,8 @@ async def cmd_tapper(message: Message):
 
 @dp.callback_query(F.data == "serve_beer")
 async def serve_beer(cb: CallbackQuery):
+    if not cb.message or not isinstance(cb.message, Message):
+        return
     game = games.get(cb.message.message_id)
     if not game or game["served"] or game["pos"] >= 5:
         await cb.answer("Слишком поздно!", show_alert=True)

@@ -5,7 +5,7 @@ from aiogram.types import InlineQuery, InlineQueryResultArticle, InputTextMessag
 from aiogram.exceptions import TelegramBadRequest
 
 logging.basicConfig(level=logging.INFO)
-BOT_TOKEN = "8891264422:AAHhq1WEI2DwuKDb-eTxeOqmYeoGt3qHnWE"
+from load_env import BOT_TOKEN
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
@@ -48,11 +48,18 @@ async def inline_market(inline_query: InlineQuery):
 
 @dp.callback_query(F.data.startswith("buy_contract_"))
 async def process_buy(cb: CallbackQuery):
+    from aiogram.types import Message
     # seller_id = cb.data.split("_")[2] # ID продавца для БД
     buyer = cb.from_user.username or cb.from_user.first_name
     
     # В реальном приложении тут происходит транзакция в БД
-    text = cb.message.text + f"\n\n✅ **ПРОДАНО!**\nПокупатель: {buyer}"
+    original_text = ""
+    if cb.message and isinstance(cb.message, Message) and cb.message.text:
+        original_text = cb.message.text
+    else:
+        original_text = "📜 **КОНТРАКТ НА ПОКУПКУ**"
+        
+    text = original_text + f"\n\n✅ **ПРОДАНО!**\nПокупатель: {buyer}"
     
     try:
         await bot.edit_message_text(text, inline_message_id=cb.inline_message_id)

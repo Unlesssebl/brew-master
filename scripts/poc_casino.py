@@ -5,7 +5,7 @@ from aiogram.types import Message
 from aiogram.filters import Command
 
 logging.basicConfig(level=logging.INFO)
-BOT_TOKEN = "8891264422:AAHhq1WEI2DwuKDb-eTxeOqmYeoGt3qHnWE"
+from load_env import BOT_TOKEN
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
@@ -19,7 +19,7 @@ async def cmd_casino(message: Message):
     # Ждем пока крутится рулетка Telegram (примерно 2 секунды)
     await asyncio.sleep(2.0)
     
-    val = dice.dice.value
+    val = dice.dice.value if dice.dice else 0
     # Telegram API возвращает значения от 1 до 64 для слотов
     # 64 - это джекпот (три семерки)
     if val == 64:

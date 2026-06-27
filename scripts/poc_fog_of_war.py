@@ -8,8 +8,7 @@ from aiogram.exceptions import TelegramBadRequest
 
 logging.basicConfig(level=logging.INFO)
 
-# Используем тот же токен, что и в предыдущих PoC
-BOT_TOKEN = "8891264422:AAHhq1WEI2DwuKDb-eTxeOqmYeoGt3qHnWE" 
+from load_env import BOT_TOKEN
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
@@ -140,6 +139,8 @@ async def cmd_fog(message: Message):
 
 @dp.callback_query(F.data.startswith("move_"))
 async def process_move(callback: CallbackQuery):
+    if not callback.message or not isinstance(callback.message, Message):
+        return
     session_id = f"{callback.message.chat.id}"
     if session_id not in sessions:
         await callback.answer("Сессия устарела. Напишите /fog", show_alert=True)
@@ -169,6 +170,8 @@ async def process_move(callback: CallbackQuery):
 
 @dp.callback_query(F.data == "action_take")
 async def process_take(callback: CallbackQuery):
+    if not callback.message or not isinstance(callback.message, Message):
+        return
     session_id = f"{callback.message.chat.id}"
     if session_id not in sessions:
         return

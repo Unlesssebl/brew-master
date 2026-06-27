@@ -7,7 +7,7 @@ from aiogram.exceptions import TelegramAPIError
 
 logging.basicConfig(level=logging.INFO)
 
-BOT_TOKEN = "8891264422:AAHhq1WEI2DwuKDb-eTxeOqmYeoGt3qHnWE"
+from load_env import BOT_TOKEN
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
@@ -33,6 +33,8 @@ async def cmd_dice(message: Message):
 
 @dp.callback_query(F.data.startswith("roll_"))
 async def process_roll(callback: CallbackQuery):
+    if not callback.message or not isinstance(callback.message, Message):
+        return
     try:
         await callback.message.edit_reply_markup(reply_markup=None)
     except TelegramAPIError:
@@ -42,13 +44,19 @@ async def process_roll(callback: CallbackQuery):
     chat_id = callback.message.chat.id
     modifier = 1
     
+    result_text = ""
+    total = 0
+    status = ""
+    effect = None
+    dice2 = None
+    
     # Логика в зависимости от типа броска
     if action == "roll_1d6":
         dc = 5
         dice1 = await bot.send_dice(chat_id=chat_id, emoji="🎲")
         await asyncio.sleep(3.5)
         
-        val = dice1.dice.value
+        val = dice1.dice.value if dice1.dice else 1
         total = val + modifier
         
         result_text = f"🎲 Выпало: **{val}**\n"
@@ -66,8 +74,8 @@ async def process_roll(callback: CallbackQuery):
         dice2 = await bot.send_dice(chat_id=chat_id, emoji="🎲")
         await asyncio.sleep(3.5)
         
-        val1 = dice1.dice.value
-        val2 = dice2.dice.value
+        val1 = dice1.dice.value if dice1.dice else 1
+        val2 = dice2.dice.value if dice2.dice else 1
         
         if action == "roll_2d6":
             dc = 8
@@ -116,7 +124,7 @@ async def process_roll(callback: CallbackQuery):
 
     try:
         # Отвечаем на последний брошенный кубик
-        target_msg_id = dice1.message_id if action == "roll_1d6" else dice2.message_id
+        target_msg_id = dice1.message_id if (action == "roll_1d6" or not dice2) else dice2.message_id
         await bot.send_message(
             chat_id=chat_id,
             text=calculation,

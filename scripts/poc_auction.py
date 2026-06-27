@@ -6,11 +6,13 @@ from aiogram.filters import Command
 from aiogram.exceptions import TelegramBadRequest
 
 logging.basicConfig(level=logging.INFO)
-BOT_TOKEN = "8891264422:AAHhq1WEI2DwuKDb-eTxeOqmYeoGt3qHnWE"
+from load_env import BOT_TOKEN
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-auction = {
+from typing import Any
+
+auction: dict[str, Any] = {
     "price": 100,
     "leader": None,
     "time_left": 60,
@@ -73,6 +75,8 @@ async def cmd_auction(message: Message):
 
 @dp.callback_query(F.data == "bid")
 async def place_bid(cb: CallbackQuery):
+    if not cb.message or not isinstance(cb.message, Message):
+        return
     if not auction["active"]:
         await cb.answer("Аукцион завершен!", show_alert=True)
         return

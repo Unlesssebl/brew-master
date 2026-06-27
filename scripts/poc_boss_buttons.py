@@ -8,7 +8,7 @@ from aiogram.exceptions import TelegramAPIError
 
 logging.basicConfig(level=logging.INFO)
 
-BOT_TOKEN = "8891264422:AAHhq1WEI2DwuKDb-eTxeOqmYeoGt3qHnWE"
+from load_env import BOT_TOKEN
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
@@ -367,6 +367,8 @@ async def cmd_boss(message: Message):
 
 @dp.callback_query(F.data.startswith("atk_"))
 async def process_combat(callback: CallbackQuery):
+    if not callback.message or not isinstance(callback.message, Message):
+        return
     boss = boss_sessions.get(callback.message.message_id)
 
     if not boss or boss["hp"] <= 0:

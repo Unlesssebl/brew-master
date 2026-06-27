@@ -6,7 +6,7 @@ from aiogram.filters import Command
 from aiogram.exceptions import TelegramBadRequest
 
 logging.basicConfig(level=logging.INFO)
-BOT_TOKEN = "8891264422:AAHhq1WEI2DwuKDb-eTxeOqmYeoGt3qHnWE"
+from load_env import BOT_TOKEN
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
@@ -37,6 +37,8 @@ async def cmd_multi(message: Message):
 
 @dp.callback_query(F.data.startswith("act_"))
 async def process_action(cb: CallbackQuery):
+    if not cb.message or not isinstance(cb.message, Message):
+        return
     log_msg_id = sessions.get(cb.message.message_id)
     if not log_msg_id:
         await cb.answer("Связь потеряна. Напишите /multi", show_alert=True)

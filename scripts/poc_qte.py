@@ -7,7 +7,7 @@ from aiogram.filters import Command
 from aiogram.exceptions import TelegramBadRequest
 
 logging.basicConfig(level=logging.INFO)
-BOT_TOKEN = "8891264422:AAHhq1WEI2DwuKDb-eTxeOqmYeoGt3qHnWE"
+from load_env import BOT_TOKEN
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
@@ -72,6 +72,8 @@ async def cmd_qte(message: Message):
 
 @dp.callback_query(F.data == "qte_hit")
 async def process_qte(cb: CallbackQuery):
+    if not cb.message or not isinstance(cb.message, Message):
+        return
     session = sessions.get(cb.message.message_id)
     if not session or not session.get("qte_active"):
         await cb.answer("Слишком поздно (или рано)!", show_alert=True)

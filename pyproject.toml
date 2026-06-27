@@ -23,7 +23,7 @@ dev = [
 ]
 
 [tool.pyright]
-extraPaths = ["."]
+extraPaths = [".", "scripts"]
 
 
 [tool.pytest.ini_options]

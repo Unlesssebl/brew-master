@@ -6,12 +6,14 @@ from aiogram.filters import Command
 from aiogram.exceptions import TelegramBadRequest
 
 logging.basicConfig(level=logging.INFO)
-BOT_TOKEN = "8891264422:AAHhq1WEI2DwuKDb-eTxeOqmYeoGt3qHnWE"
+from load_env import BOT_TOKEN
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
+from typing import Any
+
 # Имитация быстрого In-Memory хранилища (В продакшене это Redis)
-state = {
+state: dict[str, Any] = {
     "clicks": 0,
     "last_rendered_clicks": 0,
     "chat_id": None,

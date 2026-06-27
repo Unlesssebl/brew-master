@@ -8,7 +8,7 @@ from aiogram.exceptions import TelegramAPIError
 
 logging.basicConfig(level=logging.INFO)
 
-BOT_TOKEN = "8891264422:AAHhq1WEI2DwuKDb-eTxeOqmYeoGt3qHnWE"
+from load_env import BOT_TOKEN
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
@@ -124,6 +124,8 @@ async def cmd_alchemy(message: Message):
 
 @dp.callback_query(F.data.startswith("alc_"))
 async def process_alchemy(callback: CallbackQuery):
+    if not callback.message or not isinstance(callback.message, Message):
+        return
     session = alchemy_sessions.get(callback.message.message_id)
     
     if not session or session["time_left"] <= 0:
