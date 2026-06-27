@@ -7,6 +7,7 @@ from aiogram.exceptions import TelegramBadRequest
 
 logging.basicConfig(level=logging.INFO)
 from load_env import BOT_TOKEN
+
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
@@ -17,64 +18,117 @@ state: dict[str, Any] = {
     "clicks": 0,
     "last_rendered_clicks": 0,
     "chat_id": None,
-    "msg_id": None
+    "msg_id": None,
 }
 
-def get_kb():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⚔️ АТАКОВАТЬ (СПАМЬ!)", callback_data="hit", **{"style": "danger"})]
-    ])
+# Lock нужен, чтобы избежать состояния гонки при конкурентных callback'ах
+_lock = asyncio.Lock()
 
-# Фоновый воркер, который обрабатывает "очередь"
-async def debouncer_worker():
+
+def get_kb() -> InlineKeyboardMarkup:
+    # Делаем 3 кнопки, чтобы обходить блокировку UI Telegram (пока одна грузится, другие активны)
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="⚔️ УДАР 1", callback_data="hit"),
+                InlineKeyboardButton(text="⚔️ УДАР 2", callback_data="hit"),
+                InlineKeyboardButton(text="⚔️ УДАР 3", callback_data="hit"),
+            ]
+        ]
+    )
+
+
+# Фоновый воркер — проверяет стейт каждую секунду и делает ОДИН edit если были изменения
+async def debouncer_worker() -> None:
+    logging.info("Debouncer worker started")
     while True:
-        await asyncio.sleep(1.0) # Проверяем стейт 1 раз в секунду
-        
-        if state["msg_id"] and state["clicks"] != state["last_rendered_clicks"]:
-            # Состояние изменилось! Рендерим ОДИН раз за такт.
-            state["last_rendered_clicks"] = state["clicks"]
-            text = f"🔥 **РЕЙД НА БОССА**\nСчетчик урона: **{state['clicks']}**\n\nДаже если вы кликнули 50 раз за секунду, API Telegram получил только 1 запрос на обновление этого сообщения."
-            
-            try:
-                await bot.edit_message_text(
-                    text, 
-                    chat_id=state["chat_id"], 
-                    message_id=state["msg_id"], 
-                    reply_markup=get_kb(),
-                    parse_mode="Markdown"
-                )
-            except TelegramBadRequest:
-                pass
+        await asyncio.sleep(1.0)  # Один тик = один максимальный запрос к Telegram
+
+        async with _lock:
+            msg_id = state["msg_id"]
+            chat_id = state["chat_id"]
+            current = state["clicks"]
+            last = state["last_rendered_clicks"]
+
+        if msg_id is None or current == last:
+            continue  # Нечего обновлять
+
+        # Фиксируем «отрендеренное» значение ДО запроса,
+        # чтобы не пропустить клики, пришедшие во время самого edit
+        async with _lock:
+            state["last_rendered_clicks"] = current
+
+        text = (
+            f"🔥 **РЕЙД НА БОССА**\n"
+            f"Счетчик урона: **{current}**\n\n"
+            f"Даже если вы кликнули 50 раз за секунду — "
+            f"API Telegram получил только 1 запрос на обновление."
+        )
+
+        try:
+            await bot.edit_message_text(
+                text,
+                chat_id=chat_id,
+                message_id=msg_id,
+                reply_markup=get_kb(),
+                parse_mode="Markdown",
+            )
+            logging.info("Rendered clicks=%d", current)
+        except TelegramBadRequest as e:
+            # Сообщение не изменилось или уже удалено — норма
+            logging.debug("edit_message_text skipped: %s", e)
+
 
 @dp.message(Command("debouncing"))
-async def cmd_debouncing(message: Message):
-    state["clicks"] = 0
-    state["last_rendered_clicks"] = 0
-    state["chat_id"] = message.chat.id
-    
+async def cmd_debouncing(message: Message) -> None:
+    async with _lock:
+        state["clicks"] = 0
+        state["last_rendered_clicks"] = 0
+        state["chat_id"] = message.chat.id
+        state["msg_id"] = None  # сбрасываем до отправки нового сообщения
+
     text = "🔥 **РЕЙД НА БОССА**\nСчетчик урона: **0**\n\nСпамьте кнопку как можно быстрее!"
     sent = await message.answer(text, reply_markup=get_kb(), parse_mode="Markdown")
-    state["msg_id"] = sent.message_id
 
-@dp.callback_query(F.data == "hit")
-async def process_hit(cb: CallbackQuery):
-    # Мгновенно обновляем стейт в памяти, НЕ отправляя запрос в Telegram (O(1) операция)
-    state["clicks"] += 1
-    
-    # Отвечаем на callback, чтобы кнопка не зависала с часиками
+    async with _lock:
+        state["msg_id"] = sent.message_id
+
+
+async def _answer_cb(cb: CallbackQuery, text: str) -> None:
+    """Fire-and-forget обёртка: не блокирует основной хендлер."""
     try:
-        await cb.answer(f"Урон нанесен! ({state['clicks']})", show_alert=False)
-    except TelegramBadRequest:
+        await cb.answer(text, show_alert=False)
+    except Exception as e:
+        # Глушим любые ошибки (в т.ч. TelegramRetryAfter), так как это фоновый UI-запрос
         pass
 
-async def main():
+
+@dp.callback_query(F.data == "hit")
+async def process_hit(cb: CallbackQuery) -> None:
+    # Мгновенно обновляем счётчик в памяти — O(1), без запросов в Telegram
+    async with _lock:
+        state["clicks"] += 1
+        total = state["clicks"]
+
+    # cb.answer() — это HTTP round-trip ~100-180ms.
+    # create_task() запускает его в фоне и сразу освобождает event loop,
+    # позволяя обрабатывать следующий клик без ожидания ответа Telegram.
+    asyncio.create_task(_answer_cb(cb, f"⚔️ {total}"))
+
+
+async def main() -> None:
     print("▶ PoC: Система очередей (Debouncing)")
     print("Отправьте /debouncing в боте.")
     await bot.delete_webhook(drop_pending_updates=True)
-    
-    # Запускаем фоновый воркер вместе с поллингом
-    asyncio.create_task(debouncer_worker())
-    await dp.start_polling(bot)
+
+    # asyncio.gather запускает воркер и поллинг ПАРАЛЛЕЛЬНО —
+    # create_task до start_polling не давал воркеру получить управление
+    await asyncio.gather(
+        debouncer_worker(),
+        dp.start_polling(bot),
+    )
+
 
 if __name__ == "__main__":
     asyncio.run(main())
+
