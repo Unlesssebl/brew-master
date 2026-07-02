@@ -3,13 +3,41 @@ from pydantic import BaseModel, Field, field_validator
 
 class EventChoice(BaseModel):
     choice_id: str = Field(..., description="ID выбора, например 'bribe_guard'")
-    button_text: str = Field(..., max_length=30)
+    button_text: str = Field(..., max_length=35)
     result_text: str = Field(...)
+
+    @field_validator("button_text", mode="before")
+    @classmethod
+    def truncate_button_text(cls, v: str) -> str:
+        if isinstance(v, str) and len(v) > 35:
+            return v[:32] + "..."
+        return v
 
     # Жесткие границы изменения состояния
     gold_change: int = Field(default=0, ge=-200, le=200)
     reputation_change: int = Field(default=0, ge=-15, le=15)
     influence_change: int = Field(default=0, ge=-10, le=10)
+    suspicion_change: int = Field(default=0, ge=-15, le=15)
+
+    # Новые поля для механики кубиков (2d6)
+    requires_dice_roll: bool = Field(default=False)
+    dice_dc: int | None = Field(default=None, description="Сложность проверки (DC), например 7 или 8")
+    dice_stat: str | None = Field(default=None, description="Проверяемый стат: reputation, influence, alchemist_skill, merchant_skill, suspicion")
+    
+    success_result_text: str | None = Field(default=None)
+    fail_result_text: str | None = Field(default=None)
+    
+    success_gold_change: int | None = Field(default=None, ge=-200, le=200)
+    fail_gold_change: int | None = Field(default=None, ge=-200, le=200)
+    
+    success_reputation_change: int | None = Field(default=None, ge=-15, le=15)
+    fail_reputation_change: int | None = Field(default=None, ge=-15, le=15)
+    
+    success_influence_change: int | None = Field(default=None, ge=-10, le=10)
+    fail_influence_change: int | None = Field(default=None, ge=-10, le=10)
+
+    success_suspicion_change: int | None = Field(default=None, ge=-15, le=15)
+    fail_suspicion_change: int | None = Field(default=None, ge=-15, le=15)
 
 
 class GameEvent(BaseModel):
@@ -19,8 +47,13 @@ class GameEvent(BaseModel):
 
     @field_validator("choices")
     @classmethod
-    def check_balance_logic(cls, choices: list[EventChoice]) -> list[EventChoice]:
+    def check_balance_logic(cls, choices: list["EventChoice"]) -> list["EventChoice"]:
         for choice in choices:
+            if choice.requires_dice_roll:
+                # Если это бросок кубиков, предполагаем что риск и награда сбалансированы 
+                # (обычно успех = профит, провал = штраф)
+                continue
+                
             # Проверяем наличие чистого положительного прироста без каких-либо затрат
             has_positive_gain = (
                 choice.gold_change > 0
@@ -31,6 +64,7 @@ class GameEvent(BaseModel):
                 choice.gold_change < 0
                 or choice.reputation_change < 0
                 or choice.influence_change < 0
+                or choice.suspicion_change > 0
             )
 
             # Если есть плюсы, но нет минусов (затрат), это нарушение баланса
@@ -57,6 +91,8 @@ def get_fallback_event() -> GameEvent:
                 gold_change=0,
                 reputation_change=0,
                 influence_change=0,
+                suspicion_change=0,
+                requires_dice_roll=False,
             )
         ],
     )
@@ -64,7 +100,14 @@ def get_fallback_event() -> GameEvent:
 
 class PatentLore(BaseModel):
     name: str = Field(..., max_length=40)
-    lore: str = Field(..., max_length=300)
+    lore: str = Field(..., max_length=1500)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def truncate_name(cls, v: str) -> str:
+        if isinstance(v, str) and len(v) > 40:
+            return v[:37] + "..."
+        return v
 
 
 def get_fallback_patent_lore(style: str = "пиво") -> PatentLore:

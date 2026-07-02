@@ -49,6 +49,9 @@ async def show_slums(callback: CallbackQuery, session: AsyncSession) -> None:
         builder.row(
             InlineKeyboardButton(text="🗡️ Сеть осведомителей (PvP)", callback_data="slums:pvp_list")
         )
+        builder.row(
+            InlineKeyboardButton(text="🎰 Приют Азарта (Казино)", callback_data="slums:casino")
+        )
 
         await send_or_edit_dashboard(
             bot=callback.bot,
@@ -447,3 +450,145 @@ async def process_pvp_action(callback: CallbackQuery, session: AsyncSession) -> 
     except PlayerNotFoundError:
         await callback.answer("Профиль не найден.", show_alert=True)
     await callback.answer()
+
+
+@slums_router.callback_query(F.data == "slums:casino")
+async def show_casino(callback: CallbackQuery, session: AsyncSession) -> None:
+    """
+    Экран Приюта Азарта (Казино).
+    """
+    if not callback.from_user or not callback.message or not isinstance(callback.message, Message):
+        await callback.answer()
+        return
+
+    tg_id = callback.from_user.id
+    player_dal = PlayerDAL(session)
+
+    try:
+        player = await player_dal.get_player(tg_id)
+        
+        text = (
+            f"🎰 <b>Приют Азарта (Подземное казино)</b>\n\n"
+            f"За дымовой завесой прячется сверкающий огнями зал. "
+            f"Хозяин заведения скалится, предлагая вам сыграть в «Однорукого гоблина».\n\n"
+            f"⚠️ Каждая ставка повышает подозрение стражи (<b>+2%</b>) и снижает репутацию (<b>-1 ⭐</b>).\n\n"
+            f"💰 <b>Ваше золото:</b> {player.gold:.1f}\n"
+            f"Сделайте вашу ставку:"
+        )
+
+        builder = InlineKeyboardBuilder()
+        builder.row(
+            InlineKeyboardButton(text="Ставка: 50 gold", callback_data="slums:casino_bet:50")
+        )
+        builder.row(
+            InlineKeyboardButton(text="Ставка: 100 gold", callback_data="slums:casino_bet:100")
+        )
+        builder.row(
+            InlineKeyboardButton(text="Ставка: 200 gold", callback_data="slums:casino_bet:200")
+        )
+
+        await send_or_edit_dashboard(
+            bot=callback.bot,
+            player=player,
+            session=session,
+            text=text,
+            reply_markup=add_global_navigation_footer(builder.as_markup(), back_callback="screen:slums")
+        )
+    except PlayerNotFoundError:
+        await callback.answer("Профиль не найден.", show_alert=True)
+    await callback.answer()
+
+
+@slums_router.callback_query(F.data.startswith("slums:casino_bet:"))
+async def process_casino_bet(callback: CallbackQuery, session: AsyncSession) -> None:
+    """
+    Обработчик ставки в казино.
+    """
+    if not callback.from_user or not callback.message or not isinstance(callback.message, Message) or not callback.data:
+        await callback.answer()
+        return
+
+    bet_amount = Decimal(callback.data.split(":")[2])
+    tg_id = callback.from_user.id
+    player_dal = PlayerDAL(session)
+
+    try:
+        player = await player_dal.get_player(tg_id)
+
+        if player.gold < bet_amount:
+            await callback.answer(f"❌ Недостаточно золота для ставки {bet_amount:.0f}g!", show_alert=True)
+            return
+
+        # Снимаем ставку и применяем дебаффы до броска
+        await player_dal.update_player_stats(
+            player_id=cast(int, player.player_id),
+            gold_change=-bet_amount,
+            reputation_change=-1,
+            influence_change=0,
+            suspicion_change=2
+        )
+        
+        await callback.message.edit_text(f"🎰 Ставка {bet_amount:.0f} gold принята! Вращаем барабаны...")
+
+        import asyncio
+        msg = await callback.message.answer_dice(emoji="🎰")
+        await asyncio.sleep(2.0)
+
+        dice_val = msg.dice.value
+        win_amount = Decimal("0")
+        result_title = ""
+        result_desc = ""
+
+        # Проверка результата 🎰
+        # 1 - BAR BAR BAR, 22 - виноград, 43 - лимон, 64 - 7 7 7
+        if dice_val == 64:
+            win_amount = bet_amount * Decimal("10")
+            result_title = "ДЖЕКПОТ (777)!"
+            result_desc = f"Вы выиграли <b>{win_amount:.1f} gold</b>!"
+        elif dice_val in (1, 22, 43):
+            win_amount = bet_amount * Decimal("3")
+            result_title = "ТРИ ОДИНАКОВЫХ!"
+            result_desc = f"Вы выиграли <b>{win_amount:.1f} gold</b>!"
+        else:
+            win_amount = Decimal("0")
+            result_title = "ПРОИГРЫШ"
+            result_desc = "Удача отвернулась от вас."
+
+        if win_amount > 0:
+            await player_dal.change_gold(cast(int, player.player_id), win_amount)
+
+        # Пишем в лог
+        await player_dal.log_player_event(
+            player_id=cast(int, player.player_id),
+            event_type="casino_bet",
+            summary=f"Казино: ставка {bet_amount:.0f}g. {result_title} (+{win_amount:.0f} gold)",
+            metadata={"bet": float(bet_amount), "win": float(win_amount), "dice_val": dice_val}
+        )
+
+        builder = InlineKeyboardBuilder()
+        builder.row(InlineKeyboardButton(text="Сыграть еще (50g)", callback_data="slums:casino_bet:50"))
+        builder.row(InlineKeyboardButton(text="Сыграть еще (100g)", callback_data="slums:casino_bet:100"))
+        builder.row(InlineKeyboardButton(text="Сыграть еще (200g)", callback_data="slums:casino_bet:200"))
+
+        final_text = (
+            f"🎰 <b>Приют Азарта</b>\n\n"
+            f"Ставка: <b>{bet_amount:.0f} gold</b>\n"
+            f"Результат: <b>{result_title}</b>\n\n"
+            f"{result_desc}\n\n"
+            f"💰 <b>Баланс:</b> {player.gold - bet_amount + win_amount:.1f} gold\n"
+            f"🕵️ Подозрение повышено на <b>+2%</b>\n"
+            f"⭐ Репутация снижена на <b>-1</b>"
+        )
+
+        await send_or_edit_dashboard(
+            bot=callback.bot,
+            player=player,
+            session=session,
+            text=final_text,
+            reply_markup=add_global_navigation_footer(builder.as_markup(), back_callback="screen:slums")
+        )
+
+    except PlayerNotFoundError:
+        await callback.answer("Профиль не найден.", show_alert=True)
+    except Exception as e:
+        await callback.answer(f"Ошибка казино: {str(e)}", show_alert=True)

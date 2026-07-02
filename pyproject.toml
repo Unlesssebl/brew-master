@@ -30,3 +30,8 @@ extraPaths = [".", "scripts"]
 addopts = "--import-mode=importlib"
 asyncio_mode = "auto"
 
+
+[project.scripts]
+main = "main:start"
+
+

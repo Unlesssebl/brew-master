@@ -54,6 +54,7 @@ class Player(Base):
         CheckConstraint("prestige_crystals >= 0", name="chk_player_crystals"),
         CheckConstraint("reputation BETWEEN -100 AND 100", name="chk_player_reputation"),
         CheckConstraint("influence BETWEEN 0 AND 100", name="chk_player_influence"),
+        CheckConstraint("suspicion BETWEEN 0 AND 100", name="chk_player_suspicion"),
         Index("idx_players_tg_id", "tg_id"),
         {"schema": "core"},
     )
@@ -61,12 +62,14 @@ class Player(Base):
     player_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     tg_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=False)
     hud_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, default=None)
+    nav_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, default=None)
     gold: Mapped[Decimal] = mapped_column(
         Numeric(15, 2), nullable=False, default=Decimal("1000.00")
     )
     prestige_crystals: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     reputation: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0)
     influence: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0)
+    suspicion: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0)
     tavern_level: Mapped[TavernTier] = mapped_column(
         PG_ENUM(TavernTier, name="tavern_tier", schema="core"),
         nullable=False,

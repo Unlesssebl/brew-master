@@ -1,11 +1,29 @@
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 from src.llm_engine.schemas import EventChoice
+
+
+def get_nav_reply_keyboard() -> ReplyKeyboardMarkup:
+    """
+    Возвращает нативную reply-клавиатуру для постоянной навигации по 6 локациям.
+    """
+    builder = ReplyKeyboardBuilder()
+    builder.row(
+        KeyboardButton(text="🍻 Моя Таверна"),
+        KeyboardButton(text="🔥 Варочный Зал"),
+        KeyboardButton(text="🏺 Тёмный Погреб"),
+    )
+    builder.row(
+        KeyboardButton(text="⚖️ Торговая площадь"),
+        KeyboardButton(text="🌑 Тёмный переулок"),
+        KeyboardButton(text="🗺️ Ворота"),
+    )
+    return builder.as_markup(resize_keyboard=True)
 
 
 def get_main_menu_keyboard(alerts: dict | None = None) -> InlineKeyboardMarkup:
     """
-    Возвращает inline-клавиатуру главного меню в виде Карты Города (7 локаций).
+    Возвращает inline-клавиатуру главного меню с алертами и Летописью Мастера.
     """
     builder = InlineKeyboardBuilder()
 
@@ -25,18 +43,6 @@ def get_main_menu_keyboard(alerts: dict | None = None) -> InlineKeyboardMarkup:
                 )
             )
 
-    builder.row(
-        InlineKeyboardButton(text="🍻 Моя Таверна", callback_data="screen:tavern"),
-        InlineKeyboardButton(text="🏺 Тёмный Погреб", callback_data="screen:inventory"),
-    )
-    builder.row(
-        InlineKeyboardButton(text="🔥 Варочный Зал", callback_data="screen:brewery_hall"),
-        InlineKeyboardButton(text="⚖️ Торговая площадь", callback_data="screen:market"),
-    )
-    builder.row(
-        InlineKeyboardButton(text="🌑 Тёмный переулок", callback_data="screen:slums"),
-        InlineKeyboardButton(text="🗺️ Ворота", callback_data="screen:expeditions"),
-    )
     builder.row(
         InlineKeyboardButton(text="📜 Летопись Мастера", callback_data="screen:chronicle")
     )

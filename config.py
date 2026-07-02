@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     BOT_TOKEN: str
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@db:5432/beer_empire"
     LLM_API_KEY: str | None = None
+    GEMINI_API_KEY: str | None = None
     LOG_LEVEL: str = "INFO"
     GameBalance: GameBalanceModel = GameBalanceModel()
 

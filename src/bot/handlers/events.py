@@ -144,11 +144,69 @@ async def handle_llm_event_choice(
         await callback.answer("Вариант выбора не найден.", show_alert=True)
         return
 
-    # Эффекты
-    gold_change = Decimal(str(selected_choice.get("gold_change", 0)))
-    reputation_change = int(selected_choice.get("reputation_change", 0))
-    influence_change = int(selected_choice.get("influence_change", 0))
-    result_text = selected_choice.get("result_text", "Вы сделали выбор.")
+    # Проверяем на dice roll
+    requires_dice_roll = selected_choice.get("requires_dice_roll", False)
+
+    if requires_dice_roll:
+        dice_dc = selected_choice.get("dice_dc", 8)
+        dice_stat = selected_choice.get("dice_stat", "reputation")
+
+        # Отправляем сообщение о начале броска
+        await callback.message.edit_text(f"🎲 <b>Проверка: {dice_stat} (Сложность: {dice_dc})</b>\nБросаем кубики...")
+        
+        # Бросаем кубики
+        import asyncio
+        msg1 = await callback.message.answer_dice(emoji="🎲")
+        msg2 = await callback.message.answer_dice(emoji="🎲")
+        await asyncio.sleep(3.5)
+
+        dice1 = msg1.dice.value
+        dice2 = msg2.dice.value
+        total_dice = dice1 + dice2
+
+        # Считаем модификатор
+        player_dal = PlayerDAL(session)
+        player = await player_dal.get_player(tg_id)
+        
+        modifier = 0
+        if dice_stat == "reputation":
+            modifier = player.reputation // 20
+        elif dice_stat == "influence":
+            modifier = player.influence // 20
+        elif dice_stat == "suspicion":
+            modifier = -(getattr(player, "suspicion", 0) // 20)
+        
+        total_score = total_dice + modifier
+        is_success = total_score >= dice_dc
+        
+        if is_success:
+            result_text = selected_choice.get("success_result_text", "Успех!")
+            gold_change = Decimal(str(selected_choice.get("success_gold_change", 0)))
+            reputation_change = int(selected_choice.get("success_reputation_change", 0))
+            influence_change = int(selected_choice.get("success_influence_change", 0))
+            suspicion_change = int(selected_choice.get("success_suspicion_change", 0))
+            outcome_emoji = "🎉"
+            status_text = f"Успех! ({total_dice} + {modifier} = {total_score} >= {dice_dc})"
+        else:
+            result_text = selected_choice.get("fail_result_text", "Провал!")
+            gold_change = Decimal(str(selected_choice.get("fail_gold_change", 0)))
+            reputation_change = int(selected_choice.get("fail_reputation_change", 0))
+            influence_change = int(selected_choice.get("fail_influence_change", 0))
+            suspicion_change = int(selected_choice.get("fail_suspicion_change", 0))
+            outcome_emoji = "🔥"
+            status_text = f"Провал! ({total_dice} + {modifier} = {total_score} < {dice_dc})"
+        
+        dice_result_str = f"\n\n🎲 <b>Результат броска:</b> {dice1} и {dice2}\n📊 <b>Проверка:</b> {status_text}\n"
+
+    else:
+        # Эффекты (без кубиков)
+        gold_change = Decimal(str(selected_choice.get("gold_change", 0)))
+        reputation_change = int(selected_choice.get("reputation_change", 0))
+        influence_change = int(selected_choice.get("influence_change", 0))
+        suspicion_change = int(selected_choice.get("suspicion_change", 0))
+        result_text = selected_choice.get("result_text", "Вы сделали выбор.")
+        dice_result_str = ""
+        outcome_emoji = "👉"
 
     player_dal = PlayerDAL(session)
     player = await player_dal.get_player(tg_id)
@@ -159,12 +217,14 @@ async def handle_llm_event_choice(
         return
 
     # Применяем эффекты к игроку
-    if gold_change != 0:
-        await player_dal.change_gold(int(player.player_id), gold_change)
-    if reputation_change != 0:
-        await player_dal.change_reputation(int(player.player_id), reputation_change)
-    if influence_change != 0:
-        await player_dal.change_influence(int(player.player_id), influence_change)
+    # Атомарное обновление статов
+    await player_dal.update_player_stats(
+        player_id=int(player.player_id),
+        gold_change=gold_change,
+        reputation_change=reputation_change,
+        influence_change=influence_change,
+        suspicion_change=suspicion_change
+    )
 
     # Логируем событие
     event_title = task.payload.get("event_title", "Случайное событие")
@@ -186,17 +246,25 @@ async def handle_llm_event_choice(
     if gold_change != 0:
         changes_str.append(f"{'+' if gold_change > 0 else ''}{gold_change} gold")
     if reputation_change != 0:
-        changes_str.append(f"{'+' if reputation_change > 0 else ''}{reputation_change} репутации")
+        changes_str.append(f"{'+' if reputation_change > 0 else ''}{reputation_change} реп.")
     if influence_change != 0:
-        changes_str.append(f"{'+' if influence_change > 0 else ''}{influence_change} влияния")
+        changes_str.append(f"{'+' if influence_change > 0 else ''}{influence_change} вл.")
+    if suspicion_change != 0:
+        changes_str.append(f"{'+' if suspicion_change > 0 else ''}{suspicion_change} под.")
 
     effects_desc = f" ({', '.join(changes_str)})" if changes_str else ""
 
+    event_title_safe = html.quote(event_title)
+    event_desc_safe = html.quote(task.payload.get('event_description', ''))
+    button_text_safe = html.quote(selected_choice.get('button_text', ''))
+    result_text_safe = html.quote(result_text)
+
     new_text = (
-        f"🎭 <b>{event_title}</b>\n\n"
-        f"<i>{task.payload.get('event_description')}</i>\n\n"
-        f"📜 <b>Ваш выбор:</b> {selected_choice.get('button_text')}\n"
-        f"👉 <b>Результат:</b> {result_text}<b>{effects_desc}</b>"
+        f"🎭 <b>{event_title_safe}</b>\n\n"
+        f"<i>{event_desc_safe}</i>\n\n"
+        f"📜 <b>Ваш выбор:</b> {button_text_safe}"
+        f"{dice_result_str}"
+        f"\n{outcome_emoji} <b>Результат:</b> {result_text_safe}<b>{effects_desc}</b>"
     )
 
     # Редактируем сообщение, удаляя кнопки

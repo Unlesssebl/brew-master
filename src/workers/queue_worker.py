@@ -65,8 +65,9 @@ async def run_queue_worker(
                             await session.commit()
                         continue
 
-                    event_title = task.payload.get("event_title", "Случайное событие")
-                    event_description = task.payload.get("event_description", "")
+                    from aiogram import html
+                    event_title = html.quote(task.payload.get("event_title", "Случайное событие"))
+                    event_description = html.quote(task.payload.get("event_description", ""))
                     choices = task.payload.get("choices", [])
 
                     text = f"🎭 <b>{event_title}</b>\n\n{event_description}"
@@ -89,6 +90,7 @@ async def run_queue_worker(
                             chat_id=int(tg_id),
                             text=text,
                             reply_markup=builder.as_markup(),
+                            parse_mode="HTML"
                         )
                         async with session_maker() as session:
                             await QueueDAL.complete_task(session, task.task_id, success=True)

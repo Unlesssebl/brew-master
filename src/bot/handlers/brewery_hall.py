@@ -233,6 +233,7 @@ async def process_serial_brew(callback: CallbackQuery, session: AsyncSession) ->
             metadata={"recipe_id": recipe.recipe_id, "title": recipe.title}
         )
 
+        builder = InlineKeyboardBuilder()
         await send_or_edit_dashboard(
             bot=callback.bot,
             player=player,

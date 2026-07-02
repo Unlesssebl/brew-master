@@ -340,47 +340,64 @@ async def show_faction_choice(callback: CallbackQuery, session: AsyncSession) ->
         options_text = ""
         builder = InlineKeyboardBuilder()
 
+        suspicion = getattr(player, 'suspicion', 0)
+        suspicion_text = f"🕵️ Подозрение: <b>{suspicion}%</b>\n\n"
+
         # 0. Местные таверны
         if not getattr(batch, "is_spoiled", False):
             tavern_vol = batch.quantity_barrels
-            tavern_rev = Decimal(str(tavern_vol)) * base_revenue_per_barrel * batch.quality_modifier * debuff_multiplier
+            tavern_gross = Decimal(str(tavern_vol)) * base_revenue_per_barrel * batch.quality_modifier * debuff_multiplier
+            tavern_tax = tavern_gross * Decimal("0.3")
+            tavern_rev = tavern_gross - tavern_tax
             options_text += (
                 f"🍺 <b>Местные таверны (Сбыт горожанам):</b>\n"
-                f"• Покупают: <b>{tavern_vol} боч.</b> за <b>{tavern_rev:.1f} gold</b>\n"
-                f"• Репутация: <b>0 ⭐</b>\n\n"
+                f"• Покупают: <b>{tavern_vol} боч.</b>\n"
+                f"• Налог Гильдии (30%): <b>-{tavern_tax:.1f} gold</b>\n"
+                f"• Итого выручка: <b>{tavern_rev:.1f} gold</b>\n"
+                f"• Репутация: <b>0 ⭐</b>\n"
+                f"• Подозрение: <b>-5%</b>\n\n"
             )
             builder.row(InlineKeyboardButton(text=f"🍺 Таверны ({tavern_rev:.1f}g)", callback_data=f"market:sell_confirm:{batch.batch_id}:tavern:{tavern_rev:.2f}"))
 
         # 1. Дворфы: Крепость > 8
         if recipe and recipe.strength > 8 and not getattr(batch, "is_spoiled", False):
             dwarfs_vol = min(batch.quantity_barrels, 50)
-            dwarfs_rev = Decimal(str(dwarfs_vol)) * base_revenue_per_barrel * Decimal("2.0") * batch.quality_modifier * debuff_multiplier * penalty_legal
+            dwarfs_gross = Decimal(str(dwarfs_vol)) * base_revenue_per_barrel * Decimal("2.0") * batch.quality_modifier * debuff_multiplier * penalty_legal
+            dwarfs_tax = dwarfs_gross * Decimal("0.3")
+            dwarfs_rev = dwarfs_gross - dwarfs_tax
             options_text += (
                 f"⛏️ <b>Дворфы (Элитный контракт):</b>\n"
-                f"• Покупают: <b>{dwarfs_vol} боч.</b> за <b>{dwarfs_rev:.1f} gold</b>\n"
-                f"• Репутация: <b>+1 ⭐</b>\n\n"
+                f"• Покупают: <b>{dwarfs_vol} боч.</b>\n"
+                f"• Налог Гильдии (30%): <b>-{dwarfs_tax:.1f} gold</b>\n"
+                f"• Итого выручка: <b>{dwarfs_rev:.1f} gold</b>\n"
+                f"• Репутация: <b>+1 ⭐</b>\n"
+                f"• Подозрение: <b>-5%</b>\n\n"
             )
             builder.row(InlineKeyboardButton(text=f"⛏️ Дворфы ({dwarfs_rev:.1f}g)", callback_data=f"market:sell_confirm:{batch.batch_id}:dwarfs:{dwarfs_rev:.2f}"))
 
         # 2. Эльфы: Крепость < 4 и Аромат > 7
         if recipe and recipe.strength < 4 and recipe.aroma > 7 and not getattr(batch, "is_spoiled", False):
             elves_vol = min(batch.quantity_barrels, 500)
-            elves_rev = Decimal(str(elves_vol)) * base_revenue_per_barrel * Decimal("0.8") * batch.quality_modifier * debuff_multiplier * penalty_grey
+            elves_rev = Decimal(str(elves_vol)) * base_revenue_per_barrel * Decimal("1.6") * batch.quality_modifier * debuff_multiplier * penalty_grey
             options_text += (
-                f"🧝 <b>Эльфы (Контрабанда):</b>\n"
-                f"• Покупают: <b>{elves_vol} боч.</b> за <b>{elves_rev:.1f} gold</b>\n"
-                f"• Репутация: Риск падения на <b>-2 ⭐</b> (шанс 30%)\n\n"
+                f"🧝 <b>Эльфы (Черный рынок):</b>\n"
+                f"• Покупают: <b>{elves_vol} боч.</b>\n"
+                f"• Выручка: <b>{elves_rev:.1f} gold</b> (без налога, двойная прибыль)\n"
+                f"• Репутация: Риск падения на <b>-2 ⭐</b> (шанс 30%)\n"
+                f"• Подозрение: <b>+15%</b>\n\n"
             )
             builder.row(InlineKeyboardButton(text=f"🧝 Эльфы ({elves_rev:.1f}g)", callback_data=f"market:sell_confirm:{batch.batch_id}:elves:{elves_rev:.2f}"))
 
         # 3. Гоблины: Стабильность < 50 или испорчено
         if (recipe and recipe.stability < 50) or getattr(batch, "is_spoiled", False):
             goblins_vol = batch.quantity_barrels
-            goblins_rev = Decimal(str(goblins_vol)) * base_revenue_per_barrel * Decimal("0.2") * batch.quality_modifier * debuff_multiplier * penalty_black
+            goblins_rev = Decimal(str(goblins_vol)) * base_revenue_per_barrel * Decimal("0.4") * batch.quality_modifier * debuff_multiplier * penalty_black
             options_text += (
                 f"👺 <b>Гоблины (Скупщики):</b>\n"
-                f"• Покупают: <b>{goblins_vol} боч.</b> за <b>{goblins_rev:.1f} gold</b>\n"
-                f"• Репутация: Падает на <b>-3 ⭐</b>\n\n"
+                f"• Покупают: <b>{goblins_vol} боч.</b>\n"
+                f"• Выручка: <b>{goblins_rev:.1f} gold</b> (без налога, двойная прибыль)\n"
+                f"• Репутация: Падает на <b>-3 ⭐</b>\n"
+                f"• Подозрение: <b>+15%</b>\n\n"
             )
             builder.row(InlineKeyboardButton(text=f"👺 Гоблины ({goblins_rev:.1f}g)", callback_data=f"market:sell_confirm:{batch.batch_id}:goblins:{goblins_rev:.2f}"))
 
@@ -403,6 +420,7 @@ async def show_faction_choice(callback: CallbackQuery, session: AsyncSession) ->
             f"💰 <b>Выбор покупателя для вашей партии пива</b>\n\n"
             f"Объем партии: <code>{batch.quantity_barrels} бочек</code>\n"
             f"Качество: <code>{batch.quality_modifier:.2f}x</code>\n"
+            f"{suspicion_text}"
             f"{debuff_alert}{market_alerts_str}\n"
             f"Возможные сделки:\n\n"
             f"{options_text}"
@@ -458,6 +476,7 @@ async def process_sell_confirm(callback: CallbackQuery, session: AsyncSession) -
         import random
         reputation_change = 0
         influence_change = 0
+        suspicion_change = 0
         market_type = "legal"
         faction_name_ru = "Дворфы"
 
@@ -467,12 +486,14 @@ async def process_sell_confirm(callback: CallbackQuery, session: AsyncSession) -
             volume_to_sell = batch.quantity_barrels
             reputation_change = 0
             influence_change = 0
+            suspicion_change = -5
             market_type = "legal"
             faction_name_ru = "Местные таверны"
         elif faction == "dwarfs":
             volume_to_sell = min(batch.quantity_barrels, 50)
             reputation_change = 1
             influence_change = 0
+            suspicion_change = -5
             market_type = "legal"
             faction_name_ru = "Дворфы"
         elif faction == "elves":
@@ -483,12 +504,14 @@ async def process_sell_confirm(callback: CallbackQuery, session: AsyncSession) -
             else:
                 reputation_change = 0
             influence_change = 1
+            suspicion_change = 15
             market_type = "grey"
             faction_name_ru = "Эльфы"
         elif faction == "goblins":
             volume_to_sell = batch.quantity_barrels
             reputation_change = -3
             influence_change = 0
+            suspicion_change = 15
             market_type = "black"
             faction_name_ru = "Гоблины"
 
@@ -498,12 +521,13 @@ async def process_sell_confirm(callback: CallbackQuery, session: AsyncSession) -
         if player.tutorial_step == 2:
             await player_dal.update_tutorial_step(tg_id, 3)
 
-        # Обновляем статы игрока (репутация, влияние)
+        # Обновляем статы игрока (репутация, влияние, подозрение)
         await player_dal.update_player_stats(
             player_id=cast(int, player.player_id),
             gold_change=Decimal("0.00"),  # Золото уже начислено в sell_batch
             reputation_change=reputation_change,
-            influence_change=influence_change
+            influence_change=influence_change,
+            suspicion_change=suspicion_change
         )
 
         # Пишем в лог событий игрока

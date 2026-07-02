@@ -17,8 +17,8 @@ config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+if config.config_file_name is not None and config.get_main_option("programmatic") != "true":
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 
@@ -73,21 +73,35 @@ def do_run_migrations(connection):
 
 async def run_async_migrations() -> None:
     """Run migrations in an async context."""
+    print("DEBUG: run_async_migrations started", flush=True)
     connectable = async_engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
+    print("DEBUG: connectable engine created", flush=True)
 
-    async with connectable.connect() as connection:
-        # Create schemas if they do not exist in the database
-        for schema in ["core", "crafting", "economy", "queue"]:
-            await connection.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema}"))
-        await connection.commit()
+    try:
+        async with connectable.connect() as connection:
+            print("DEBUG: connected to database", flush=True)
+            # Create schemas if they do not exist in the database
+            for schema in ["core", "crafting", "economy", "queue"]:
+                print(f"DEBUG: creating schema {schema} if not exists", flush=True)
+                await connection.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema}"))
+            print("DEBUG: committing schemas", flush=True)
+            await connection.commit()
+            print("DEBUG: schemas committed", flush=True)
 
-        await connection.run_sync(do_run_migrations)
-
-    await connectable.dispose()
+            print("DEBUG: starting run_sync do_run_migrations", flush=True)
+            await connection.run_sync(do_run_migrations)
+            print("DEBUG: run_sync do_run_migrations completed", flush=True)
+    except Exception as e:
+        print(f"DEBUG: error in run_async_migrations: {e}", flush=True)
+        raise e
+    finally:
+        print("DEBUG: disposing engine", flush=True)
+        await connectable.dispose()
+        print("DEBUG: engine disposed", flush=True)
 
 
 def run_migrations_online() -> None:

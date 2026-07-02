@@ -11,11 +11,8 @@ async def call_llm_api(prompt: str) -> str:
     """
     if not settings.LLM_API_KEY:
         logger.warning("LLM_API_KEY не задан. Используется заглушка для генерации события.")
-        return (
-            '{"event_title": "Затишье в таверне", '
-            '"event_description": "В таверне подозрительно тихо. Никаких событий сегодня не произошло.", '
-            '"choices": []}'
-        )
+        from src.llm_engine.schemas import get_fallback_event
+        return get_fallback_event().model_dump_json()
 
     try:
         from google import genai
@@ -63,5 +60,12 @@ async def generate_patent_image(prompt: str) -> bytes | None:
 
         return await asyncio.to_thread(_sync_generate)
     except Exception as e:
-        logger.error(f"Ошибка при генерации изображения через Imagen API: {e}", exc_info=True)
+        err_msg = str(e)
+        if "404" in err_msg or "NOT_FOUND" in err_msg:
+            logger.warning(
+                "Генерация изображений через Imagen API недоступна (ошибка 404). "
+                "Вероятно, ваш API-ключ Gemini находится на бесплатном тарифе (Free Tier), который не поддерживает генерацию картинок."
+            )
+        else:
+            logger.error(f"Ошибка при генерации изображения через Imagen API: {e}", exc_info=True)
         return None

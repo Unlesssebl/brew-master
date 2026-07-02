@@ -60,8 +60,29 @@ async def main() -> None:
         logger.info("Работа приложения полностью завершена.")
 
 
-if __name__ == "__main__":
+def start() -> None:
+    """
+    Точка входа для запуска через консольные утилиты (например, uv run main).
+    Автоматически применяет миграции Alembic перед запуском оркестратора.
+    """
+    from alembic.config import Config
+    from alembic import command
+    
+    logger.info("Проверка и применение миграций Alembic...")
+    try:
+        alembic_cfg = Config("alembic.ini")
+        alembic_cfg.set_main_option("programmatic", "true")
+        command.upgrade(alembic_cfg, "head")
+        logger.info("Миграции успешно применены/проверены.")
+    except Exception as e:
+        logger.error(f"Критическая ошибка при применении миграций: {e}")
+        return
+
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
         logger.info("Процесс прерван пользователем (KeyboardInterrupt). Завершение работы...")
+
+
+if __name__ == "__main__":
+    start()

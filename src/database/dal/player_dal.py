@@ -152,12 +152,12 @@ class PlayerDAL:
         return next_tier
 
     async def update_player_stats(
-        self, player_id: int, gold_change: float | Decimal, reputation_change: int, influence_change: int
+        self, player_id: int, gold_change: float | Decimal, reputation_change: int, influence_change: int, suspicion_change: int = 0
     ) -> None:
         """
-        Атомарно обновляет золото, репутацию и влияние игрока.
+        Атомарно обновляет золото, репутацию, влияние и подозрение игрока.
         Проверяет, чтобы золото не стало отрицательным.
-        Применяет Clamp к репутации [-100, 100] и влиянию [0, 100].
+        Применяет Clamp к репутации [-100, 100], влиянию [0, 100] и подозрению [0, 100].
         """
         player = await self.get_player_by_id(player_id)
 
@@ -167,13 +167,30 @@ class PlayerDAL:
 
         new_reputation = max(-100, min(100, player.reputation + reputation_change))
         new_influence = max(0, min(100, player.influence + influence_change))
+        new_suspicion = max(0, min(100, getattr(player, 'suspicion', 0) + suspicion_change))
 
         stmt = (
             update(Player)
             .where(Player.player_id == player_id)
-            .values(reputation=new_reputation, influence=new_influence)
+            .values(reputation=new_reputation, influence=new_influence, suspicion=new_suspicion)
         )
         await self.session.execute(stmt)
+
+    async def change_suspicion(self, player_id: int, amount: int) -> int:
+        """
+        Изменяет уровень подозрения игрока, не выходя за пределы [0, 100].
+        Возвращает новое значение подозрения.
+        """
+        player = await self.get_player_by_id(player_id)
+        new_suspicion = max(0, min(100, getattr(player, 'suspicion', 0) + amount))
+        
+        stmt = (
+            update(Player)
+            .where(Player.player_id == player_id)
+            .values(suspicion=new_suspicion)
+        )
+        await self.session.execute(stmt)
+        return new_suspicion
 
     async def create_staff(self, player_id: int, name: str, role: str, skill: int) -> Staff:
         """

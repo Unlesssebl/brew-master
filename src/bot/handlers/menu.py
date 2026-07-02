@@ -52,7 +52,7 @@ async def show_menu_callback(callback: CallbackQuery, session: AsyncSession, sta
             player=player,
             session=session,
             text=text,
-            reply_markup=get_main_menu_keyboard(alerts)
+            reply_markup=get_main_menu_keyboard(alerts),
         )
         
     except PlayerNotFoundError:
@@ -86,6 +86,8 @@ async def show_inventory(callback: CallbackQuery, session: AsyncSession) -> None
         res = await session.execute(stmt)
         batches = res.scalars().all()
 
+        alerts = await player_dal.get_alerts_summary(cast(int, player.player_id))
+
         text = (
             f"🏺 <b>Тёмный Погреб (Склад)</b>\n"
             f"<code>┌────────────────────────────</code>\n"
@@ -97,6 +99,13 @@ async def show_inventory(callback: CallbackQuery, session: AsyncSession) -> None
         )
 
         builder = InlineKeyboardBuilder()
+        if alerts.get("ready_batches", 0) > 0:
+            builder.row(
+                InlineKeyboardButton(
+                    text=f"🟢 Собрать пиво ({alerts['ready_batches']} шт)",
+                    callback_data="inventory:collect_ready",
+                )
+            )
 
         if batches:
             text += "🍺 <b>Бочки готового пива на складе:</b>\n"
@@ -334,9 +343,15 @@ async def show_chronicle(callback: CallbackQuery, session: AsyncSession) -> None
         )
         
     except PlayerNotFoundError:
-        await callback.answer("Профиль не найден.", show_alert=True)
+        try:
+            await callback.answer("Профиль не найден.", show_alert=True)
+        except Exception:
+            pass
 
-    await callback.answer()
+    try:
+        await callback.answer()
+    except Exception:
+        pass
 
 
 @menu_router.callback_query(F.data.startswith("patent:examine:"))

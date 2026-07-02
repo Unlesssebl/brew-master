@@ -31,8 +31,10 @@ CREATE TABLE core.players (
     prestige_crystals INT NOT NULL DEFAULT 0 CONSTRAINT chk_player_crystals CHECK (prestige_crystals >= 0),
     reputation SMALLINT NOT NULL DEFAULT 0 CONSTRAINT chk_player_reputation CHECK (reputation BETWEEN -100 AND 100),
     influence SMALLINT NOT NULL DEFAULT 0 CONSTRAINT chk_player_influence CHECK (influence BETWEEN 0 AND 100),
+    suspicion SMALLINT NOT NULL DEFAULT 0 CONSTRAINT chk_player_suspicion CHECK (suspicion BETWEEN 0 AND 100),
     tavern_level core.tavern_tier NOT NULL DEFAULT 'garage',
     hud_message_id BIGINT DEFAULT NULL, -- ID активного сообщения дашборда (SPA) в Telegram
+    nav_message_id BIGINT DEFAULT NULL, -- ID сообщения с Reply-клавиатурой навигации в Telegram
     
     last_offline_calc_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
@@ -130,6 +132,7 @@ CREATE TABLE crafting.batches (
     quality_modifier NUMERIC(3, 2) NOT NULL DEFAULT 1.00,
     
     is_completed BOOLEAN NOT NULL DEFAULT FALSE,
+    is_spoiled BOOLEAN NOT NULL DEFAULT FALSE,
     ready_at TIMESTAMP WITH TIME ZONE NOT NULL, 
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );

@@ -28,6 +28,7 @@ def upgrade() -> None:
     sa.Column('prestige_crystals', sa.Integer(), nullable=False),
     sa.Column('reputation', sa.SmallInteger(), nullable=False),
     sa.Column('influence', sa.SmallInteger(), nullable=False),
+    sa.Column('suspicion', sa.SmallInteger(), nullable=False, server_default=sa.text('0')),
     sa.Column('tavern_level', postgresql.ENUM('garage', 'tavern', 'brewery', 'factory', 'guild', name='tavern_tier', schema='core'), nullable=False),
     sa.Column('last_offline_calc_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
@@ -35,6 +36,7 @@ def upgrade() -> None:
     sa.CheckConstraint('influence BETWEEN 0 AND 100', name='chk_player_influence'),
     sa.CheckConstraint('prestige_crystals >= 0', name='chk_player_crystals'),
     sa.CheckConstraint('reputation BETWEEN -100 AND 100', name='chk_player_reputation'),
+    sa.CheckConstraint('suspicion BETWEEN 0 AND 100', name='chk_player_suspicion'),
     sa.PrimaryKeyConstraint('player_id'),
     sa.UniqueConstraint('tg_id'),
     schema='core'
@@ -133,6 +135,7 @@ def upgrade() -> None:
     sa.Column('quantity_barrels', sa.Integer(), nullable=False),
     sa.Column('quality_modifier', sa.Numeric(precision=3, scale=2), nullable=False),
     sa.Column('is_completed', sa.Boolean(), nullable=False),
+    sa.Column('is_spoiled', sa.Boolean(), server_default=sa.text('FALSE'), nullable=False),
     sa.Column('ready_at', sa.DateTime(timezone=True), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.CheckConstraint('quantity_barrels >= 0', name='chk_batch_quantity'),

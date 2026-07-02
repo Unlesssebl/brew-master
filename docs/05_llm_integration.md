@@ -21,17 +21,45 @@ LLM используется исключительно как генерато�
 
 ```python
 from pydantic import BaseModel, Field, field_validator
-from typing import List
+from typing import List, Optional
 
 class EventChoice(BaseModel):
     choice_id: str = Field(..., description="ID выбора, например 'bribe_guard'")
-    button_text: str = Field(..., max_length=30)
+    button_text: str = Field(..., max_length=35)
     result_text: str = Field(...)
-    
+
+    @field_validator("button_text", mode="before")
+    @classmethod
+    def truncate_button_text(cls, v: str) -> str:
+        if isinstance(v, str) and len(v) > 35:
+            return v[:32] + "..."
+        return v
+
     # Жесткие границы изменения состояния (Anti-Exploit)
     gold_change: int = Field(default=0, ge=-200, le=200)
     reputation_change: int = Field(default=0, ge=-15, le=15)
     influence_change: int = Field(default=0, ge=-10, le=10)
+    suspicion_change: int = Field(default=0, ge=-15, le=15)
+
+    # Новые поля для механики проверок (2d6)
+    requires_dice_roll: bool = Field(default=False)
+    dice_dc: Optional[int] = Field(default=None, description="Сложность проверки (DC)")
+    dice_stat: Optional[str] = Field(default=None, description="Проверяемый стат: reputation, influence, alchemist_skill, merchant_skill, suspicion")
+    
+    success_result_text: Optional[str] = Field(default=None)
+    fail_result_text: Optional[str] = Field(default=None)
+    
+    success_gold_change: Optional[int] = Field(default=None, ge=-200, le=200)
+    fail_gold_change: Optional[int] = Field(default=None, ge=-200, le=200)
+    
+    success_reputation_change: Optional[int] = Field(default=None, ge=-15, le=15)
+    fail_reputation_change: Optional[int] = Field(default=None, ge=-15, le=15)
+    
+    success_influence_change: Optional[int] = Field(default=None, ge=-10, le=10)
+    fail_influence_change: Optional[int] = Field(default=None, ge=-10, le=10)
+
+    success_suspicion_change: Optional[int] = Field(default=None, ge=-15, le=15)
+    fail_suspicion_change: Optional[int] = Field(default=None, ge=-15, le=15)
 
 class GameEvent(BaseModel):
     event_title: str = Field(..., max_length=50)
@@ -39,11 +67,25 @@ class GameEvent(BaseModel):
     choices: List[EventChoice] = Field(..., min_length=1, max_length=3)
 
     @field_validator('choices')
-    def check_balance_logic(cls, choices):
+    @classmethod
+    def check_balance_logic(cls, choices: List[EventChoice]) -> List[EventChoice]:
         for choice in choices:
+            if choice.requires_dice_roll:
+                # Если это бросок кубиков, предполагаем что риск и награда сбалансированы
+                continue
+                
             # Проверяем наличие чистого положительного баффа без каких-либо затрат
-            has_positive_gain = choice.gold_change > 0 or choice.reputation_change > 0 or choice.influence_change > 0
-            has_any_cost = choice.gold_change < 0 or choice.reputation_change < 0 or choice.influence_change < 0
+            has_positive_gain = (
+                choice.gold_change > 0 
+                or choice.reputation_change > 0 
+                or choice.influence_change > 0
+            )
+            has_any_cost = (
+                choice.gold_change < 0 
+                or choice.reputation_change < 0 
+                or choice.influence_change < 0
+                or choice.suspicion_change > 0
+            )
             
             # Если есть плюсы, но нет минусов (затрат), это нарушение баланса
             if has_positive_gain and not has_any_cost:

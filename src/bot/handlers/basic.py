@@ -6,11 +6,24 @@ from aiogram.types import Message, InlineKeyboardButton, CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.bot.keyboards.inline import get_main_menu_keyboard, get_tutorial_start_keyboard, get_welcome_keyboard
+from src.bot.keyboards.inline import (
+    get_main_menu_keyboard,
+    get_tutorial_start_keyboard,
+    get_welcome_keyboard,
+    get_nav_reply_keyboard,
+)
 from src.bot.states import TutorialStates
 from src.bot.utils.formatters import get_profile_text
 from src.bot.utils.hud import send_or_edit_dashboard
 from src.database.dal import PlayerDAL, PlayerNotFoundError
+
+# Импорт хэндлеров локаций для Reply Keyboard навигации
+from src.bot.handlers.buildings import show_tavern
+from src.bot.handlers.brewery_hall import show_brewery_hall
+from src.bot.handlers.menu import show_inventory
+from src.bot.handlers.market import show_market
+from src.bot.handlers.slums import show_slums
+from src.bot.handlers.events import show_expeditions_screen
 
 basic_router = Router()
 
@@ -93,6 +106,7 @@ async def cmd_start(message: Message, session: AsyncSession, state: FSMContext |
         text=text,
         reply_markup=get_main_menu_keyboard(alerts),
         force_new=True,
+        reply_keyboard=get_nav_reply_keyboard(),
     )
 
 
@@ -156,6 +170,7 @@ async def cmd_menu(message: Message, session: AsyncSession) -> None:
             text=text,
             reply_markup=get_main_menu_keyboard(alerts),
             force_new=True,
+            reply_keyboard=get_nav_reply_keyboard(),
         )
     except PlayerNotFoundError:
         await message.answer(
@@ -189,9 +204,133 @@ async def cmd_profile(message: Message, session: AsyncSession) -> None:
             text=text,
             reply_markup=get_main_menu_keyboard(alerts),
             force_new=True,
+            reply_keyboard=get_nav_reply_keyboard(),
         )
     except PlayerNotFoundError:
         await message.answer(
             "Вы не зарегистрированы в игре. Напишите /start, чтобы начать приключение!",
             parse_mode="HTML",
         )
+
+
+def make_mock_callback(message: Message, data: str) -> CallbackQuery:
+    async def dummy_answer(*args, **kwargs):
+        pass
+    
+    cb = CallbackQuery(
+        id="mock",
+        from_user=message.from_user,
+        chat_instance="mock",
+        message=message,
+        data=data
+    )
+    cb.answer = dummy_answer
+    return cb
+
+
+@basic_router.message(F.text == "🍻 Моя Таверна")
+async def handle_nav_tavern(message: Message, session: AsyncSession) -> None:
+    player_dal = PlayerDAL(session)
+    try:
+        player = await player_dal.get_player(message.from_user.id)
+        if player.tutorial_step < 3:
+            return
+    except Exception:
+        return
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
+    cb = make_mock_callback(message, "screen:tavern")
+    await show_tavern(cb, session)
+
+
+@basic_router.message(F.text == "🔥 Варочный Зал")
+async def handle_nav_brewery_hall(message: Message, session: AsyncSession) -> None:
+    player_dal = PlayerDAL(session)
+    try:
+        player = await player_dal.get_player(message.from_user.id)
+        if player.tutorial_step < 3:
+            return
+    except Exception:
+        return
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
+    cb = make_mock_callback(message, "screen:brewery_hall")
+    await show_brewery_hall(cb, session)
+
+
+@basic_router.message(F.text == "🏺 Тёмный Погреб")
+async def handle_nav_inventory(message: Message, session: AsyncSession) -> None:
+    player_dal = PlayerDAL(session)
+    try:
+        player = await player_dal.get_player(message.from_user.id)
+        if player.tutorial_step < 3:
+            return
+    except Exception:
+        return
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
+    cb = make_mock_callback(message, "screen:inventory")
+    await show_inventory(cb, session)
+
+
+@basic_router.message(F.text == "⚖️ Торговая площадь")
+async def handle_nav_market(message: Message, session: AsyncSession) -> None:
+    player_dal = PlayerDAL(session)
+    try:
+        player = await player_dal.get_player(message.from_user.id)
+        if player.tutorial_step < 3:
+            return
+    except Exception:
+        return
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
+    cb = make_mock_callback(message, "screen:market")
+    await show_market(cb, session)
+
+
+@basic_router.message(F.text == "🌑 Тёмный переулок")
+async def handle_nav_slums(message: Message, session: AsyncSession) -> None:
+    player_dal = PlayerDAL(session)
+    try:
+        player = await player_dal.get_player(message.from_user.id)
+        if player.tutorial_step < 3:
+            return
+    except Exception:
+        return
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
+    cb = make_mock_callback(message, "screen:slums")
+    await show_slums(cb, session)
+
+
+@basic_router.message(F.text == "🗺️ Ворота")
+async def handle_nav_expeditions(message: Message, state: FSMContext, session: AsyncSession) -> None:
+    player_dal = PlayerDAL(session)
+    try:
+        player = await player_dal.get_player(message.from_user.id)
+        if player.tutorial_step < 3:
+            return
+    except Exception:
+        return
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
+    cb = make_mock_callback(message, "screen:expeditions")
+    await show_expeditions_screen(cb, state, session)
